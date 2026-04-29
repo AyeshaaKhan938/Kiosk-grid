@@ -1,0 +1,45 @@
+name: vmfs_lottery
+description: VMFS USA - Vending Machine Lottery System
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # HTTP client para llamar la API Laravel
+  http: ^1.2.0
+
+  # Manejo de variables de entorno (.env)
+  flutter_dotenv: ^5.1.0
+
+  # Criptografía para firma HMAC-SHA1 (Vending Machine API)
+  crypto: ^3.0.0
+
+  # Imágenes en red con caché en disco/memoria (evita recargas y jank)
+  cached_network_image: ^3.4.1
+
+  # Configuración persistente post-instalación (machine number, API URL, etc.)
+  shared_preferences: ^2.3.0
+
+  # Verificar conectividad de red (WiFi / Ethernet / None)
+  connectivity_plus: ^6.0.0
+
+  # Comunicación USB serial con el Control Board de la vending machine
+  # Protocolo UART 9600bps / 8N1 (Reyeah VMC Communication API)
+  usb_serial: ^0.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Incluir el archivo .env como asset
+  assets:
+    - .env

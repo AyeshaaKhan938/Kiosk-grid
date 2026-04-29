@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Filtro de dispositivos USB para el Control Board de la vending machine.
+  La app se abrirá automáticamente cuando cualquiera de estos chips se conecte.
+
+  Chips USB-to-Serial comunes en placas controladoras de vending machines:
+    - CP210x  (Silicon Labs)  VID: 0x10C4
+    - CH340/CH341 (WinChipHead) VID: 0x1A86
+    - FTDI FT232  VID: 0x0403
+    - Prolific PL2303  VID: 0x067B
+
+  Si tu placa usa un chip diferente, agrega su VID/PID aquí.
+  Puedes encontrar el VID/PID conectando el dispositivo y usando:
+    adb shell lsusb
+-->
+<resources>
+    <!-- Silicon Labs CP210x (muy común en placas industriales) -->
+    <usb-device vendor-id="4292" />   <!-- 0x10C4 -->
+
+    <!-- WinChipHead CH340 / CH341 -->
+    <usb-device vendor-id="6790" />   <!-- 0x1A86 -->
+
+    <!-- FTDI FT232RL -->
+    <usb-device vendor-id="1027" />   <!-- 0x0403 -->
+
+    <!-- Prolific PL2303 -->
+    <usb-device vendor-id="1659" />   <!-- 0x067B -->
+
+    <!-- Microchip MCP2200 -->
+    <usb-device vendor-id="1240" />   <!-- 0x04D8 -->
+</resources>
