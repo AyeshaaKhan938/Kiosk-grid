@@ -27,7 +27,16 @@
       "Read(//opt/homebrew/Cellar/**)",
       "Bash(/Applications/Local.app/Contents/Resources/extraResources/lightning-services/php-8.2.27+1/bin/darwin-arm64/bin/php artisan *)",
       "Bash('/Users/javier/Library/Application Support/Herd/bin/php84' artisan db:seed --class=VendingProductSeeder)",
-      "Bash('/Users/javier/Library/Application Support/Herd/bin/php84' artisan tinker '--execute= *)"
+      "Bash('/Users/javier/Library/Application Support/Herd/bin/php84' artisan tinker '--execute= *)",
+      "Bash(grep -v \"^$\")",
+      "Bash(pandoc \"/Users/javier/Documents/VMFS DOCS/Software API document .docx\" -o /tmp/api_doc.md)",
+      "Bash(python3 -c ' *)",
+      "Bash(flutter run *)",
+      "Bash(dart run *)",
+      "Bash(python3 test_reyeah_api.py)",
+      "Bash(find /Users/javier/Documents/Projects/VMSF/vmfs-cloud -path \"*/vendor\" -prune -o -type f -name \"*.php\" -exec grep -l \"Route::\" {} \\\\;)",
+      "Bash(/opt/homebrew/bin/php --version)",
+      "Bash(php -r \"echo bin2hex\\(random_bytes\\(32\\)\\);\")"
     ]
   }
 }

@@ -11,6 +11,9 @@
     <!-- Mantener pantalla encendida (kiosk) -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Auto-start cuando la tablet enciende tras corte de luz -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
         android:label="VMFS USA"
         android:name="${applicationName}"
@@ -32,10 +35,15 @@
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
 
-            <!-- Launcher principal -->
+            <!-- Launcher principal + Home replacement (kiosk lockdown):
+                 al registrar HOME + DEFAULT, Android puede elegir esta app
+                 como pantalla principal. Pulsar el botón Home regresa al kiosk
+                 en lugar de salir al launcher de fábrica. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
             <!-- USB Device Attached: abre/activa la app al conectar el VMC -->
@@ -51,6 +59,21 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- BootReceiver: relanza MainActivity cuando la tablet enciende tras
+             corte de luz / reinicio. Sin esto el kiosk se queda en el launcher
+             de Android hasta que alguien toque el icono manualmente. -->
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
     </application>
 
     <queries>

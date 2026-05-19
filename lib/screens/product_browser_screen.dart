@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/advertisement.dart';
 import '../models/machine_slot.dart';
 import '../services/advertisement_service.dart';
+import '../services/app_config.dart';
 import '../services/slot_service.dart';
 import 'admin_config_screen.dart';
 import 'idle_screen.dart';
@@ -212,11 +213,15 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
     // El 0.2 extra hace peek del 6° producto, indicando que hay más
     final cardWidth = (size.width - 2 * _kSidePad - 5.2 * _kCardSpacing) / 5.2;
 
+    final cs      = Theme.of(context).colorScheme;
+    final bg      = Theme.of(context).scaffoldBackgroundColor;
+    final primary = cs.primary;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: bg,
       body: Column(
         children: [
-          _buildHeader(),
+          _buildHeader(cs: cs, bg: bg, primary: primary),
           // ── Banner + botón Lottery centrado ─────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: _kSidePad, vertical: 8),
@@ -227,7 +232,7 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    _buildBanner(),
+                    _buildBanner(primary: primary),
                     // Degradado inferior
                     Positioned(
                       bottom: 0, left: 0, right: 0,
@@ -243,8 +248,9 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
                         ),
                       ),
                     ),
-                    // Lottery button CENTRADO
-                    Center(child: _LotteryCouponButton(onTap: _openLotteryCode)),
+                    // Lottery button — solo si hay token configurado
+                    if (AppConfig.lotteryToken.isNotEmpty)
+                      Center(child: _LotteryCouponButton(onTap: _openLotteryCode)),
                     // Dots demo
                     if (_topAds.isEmpty)
                       Positioned(
@@ -270,9 +276,9 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
               ),
             ),
           ),
-          _buildProductsLabel(),
-          Expanded(child: _buildAllRows(cardWidth)),
-          _buildBackBar(),
+          _buildProductsLabel(cs: cs, bg: bg, primary: primary),
+          Expanded(child: _buildAllRows(cardWidth, cs: cs, primary: primary)),
+          _buildBackBar(cs: cs, bg: bg),
         ],
       ),
     );
@@ -280,12 +286,12 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
 
   // ── Header ────────────────────────────────────────────────────────────────
 
-  Widget _buildHeader() {
+  Widget _buildHeader({required ColorScheme cs, required Color bg, required Color primary}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: _kSidePad, vertical: 8),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Colors.black12)),
+      decoration: BoxDecoration(
+        color: bg,
+        border: Border(bottom: BorderSide(color: cs.onSurface.withValues(alpha: 0.12))),
       ),
       child: Row(
         children: [
@@ -294,18 +300,18 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                color: const Color(0xFF007ACC),
+                color: primary,
                 borderRadius: BorderRadius.circular(7),
               ),
-              child: const Text('VMFS',
-                  style: TextStyle(color: Colors.white,
+              child: Text('VMFS',
+                  style: TextStyle(color: cs.onPrimary,
                       fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 2)),
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(_data?.machineName ?? 'VMFS USA',
-                style: const TextStyle(color: Colors.black87,
+                style: TextStyle(color: cs.onSurface,
                     fontSize: 14, fontWeight: FontWeight.bold)),
           ),
           SizedBox(
@@ -314,7 +320,8 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
             child: IconButton(
               tooltip: 'Refresh product list',
               onPressed: _loadSlots,
-              icon: const Icon(Icons.refresh_rounded, color: Colors.black54, size: 18),
+              icon: Icon(Icons.refresh_rounded,
+                  color: cs.onSurface.withValues(alpha: 0.65), size: 18),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
             ),
@@ -332,13 +339,13 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF007ACC).withValues(alpha: 0.12),
+                      color: primary.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(7),
                       border: Border.all(
-                          color: const Color(0xFF007ACC).withValues(alpha: 0.3)),
+                          color: primary.withValues(alpha: 0.3)),
                     ),
-                    child: const Icon(Icons.settings_outlined,
-                        color: Color(0xFF007ACC), size: 16),
+                    child: Icon(Icons.settings_outlined,
+                        color: primary, size: 16),
                   ),
                 ),
               ),
@@ -351,7 +358,7 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
 
   // ── Banner ────────────────────────────────────────────────────────────────
 
-  Widget _buildBanner() {
+  Widget _buildBanner({required Color primary}) {
     if (_topAds.isNotEmpty) {
       return Stack(fit: StackFit.expand, children: [
         PageView.builder(
@@ -378,7 +385,7 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
                   width: i == _adIndex ? 16 : 6, height: 6,
                   decoration: BoxDecoration(
                     color: i == _adIndex
-                        ? const Color(0xFF007ACC)
+                        ? primary
                         : Colors.white.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(3),
                   ),
@@ -402,33 +409,33 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
 
   // ── Products label ────────────────────────────────────────────────────────
 
-  Widget _buildProductsLabel() {
+  Widget _buildProductsLabel({required ColorScheme cs, required Color bg, required Color primary}) {
     final count = _data?.slots.where((s) => s.isAvailable).length ?? 0;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: _kSidePad, vertical: 5),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Colors.black12)),
+      decoration: BoxDecoration(
+        color: bg,
+        border: Border(bottom: BorderSide(color: cs.onSurface.withValues(alpha: 0.12))),
       ),
       child: Row(
         children: [
-          const Icon(Icons.grid_view_rounded, color: Color(0xFF007ACC), size: 13),
+          Icon(Icons.grid_view_rounded, color: primary, size: 13),
           const SizedBox(width: 6),
-          const Text('PRODUCTS',
-              style: TextStyle(color: Colors.black54, fontSize: 10,
+          Text('PRODUCTS',
+              style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 10,
                   fontWeight: FontWeight.w600, letterSpacing: 2)),
           const SizedBox(width: 8),
           if (count > 0)
             Text('$count available',
                 style: TextStyle(
-                    color: const Color(0xFF007ACC).withValues(alpha: 0.7),
+                    color: primary.withValues(alpha: 0.7),
                     fontSize: 10)),
           const Spacer(),
-          const Icon(Icons.arrow_forward_rounded, color: Colors.black45, size: 11),
+          Icon(Icons.arrow_forward_rounded, color: cs.onSurface.withValues(alpha: 0.48), size: 11),
           const SizedBox(width: 2),
-          const Icon(Icons.arrow_back_rounded, color: Colors.black45, size: 11),
+          Icon(Icons.arrow_back_rounded, color: cs.onSurface.withValues(alpha: 0.48), size: 11),
           const SizedBox(width: 2),
-          const Icon(Icons.arrow_forward_rounded, color: Colors.black45, size: 11),
+          Icon(Icons.arrow_forward_rounded, color: cs.onSurface.withValues(alpha: 0.48), size: 11),
         ],
       ),
     );
@@ -436,14 +443,14 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
 
   // ── All rows ──────────────────────────────────────────────────────────────
 
-  Widget _buildAllRows(double cardWidth) {
+  Widget _buildAllRows(double cardWidth, {required ColorScheme cs, required Color primary}) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(
-          color: Color(0xFF007ACC), strokeWidth: 2.5));
+      return Center(child: CircularProgressIndicator(
+          color: primary, strokeWidth: 2.5));
     }
-    if (_error != null) return _buildError(_error!);
+    if (_error != null) return _buildError(_error!, cs: cs, primary: primary);
     final slots = _data?.slots ?? [];
-    if (slots.isEmpty) return _buildEmpty();
+    if (slots.isEmpty) return _buildEmpty(cs: cs);
 
     const rowSpacing = 8.0;
     final rows = _rowSlots;
@@ -472,12 +479,12 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
 
   // ── Back bar ──────────────────────────────────────────────────────────────
 
-  Widget _buildBackBar() {
+  Widget _buildBackBar({required ColorScheme cs, required Color bg}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: _kSidePad, vertical: 7),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.black12)),
+      decoration: BoxDecoration(
+        color: bg,
+        border: Border(top: BorderSide(color: cs.onSurface.withValues(alpha: 0.12))),
       ),
       child: Row(
         children: [
@@ -489,42 +496,42 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.04),
+                  color: cs.onSurface.withValues(alpha: 0.04),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.black12),
+                  border: Border.all(color: cs.onSurface.withValues(alpha: 0.12)),
                 ),
-                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
                   Icon(Icons.arrow_back_ios_new_rounded,
-                      color: Colors.black54, size: 12),
-                  SizedBox(width: 5),
+                      color: cs.onSurface.withValues(alpha: 0.65), size: 12),
+                  const SizedBox(width: 5),
                   Text('Back to ads',
-                      style: TextStyle(color: Colors.black54, fontSize: 11)),
+                      style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 11)),
                 ]),
               ),
             ),
           ),
           const Spacer(),
-          const Text('VMFS USA © 2026',
-              style: TextStyle(color: Colors.black54, fontSize: 10)),
+          Text('VMFS USA © 2026',
+              style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 10)),
         ],
       ),
     );
   }
 
-  Widget _buildError(String msg) => Center(
+  Widget _buildError(String msg, {required ColorScheme cs, required Color primary}) => Center(
     child: Column(mainAxisSize: MainAxisSize.min, children: [
-      const Icon(Icons.wifi_off_rounded, color: Colors.black38, size: 40),
+      Icon(Icons.wifi_off_rounded, color: cs.onSurface.withValues(alpha: 0.48), size: 40),
       const SizedBox(height: 10),
       Text(msg, textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.black54, fontSize: 13)),
+          style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 13)),
       const SizedBox(height: 16),
       ElevatedButton.icon(
         onPressed: _loadSlots,
         icon: const Icon(Icons.refresh_rounded),
         label: const Text('Try again'),
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF007ACC),
-          foregroundColor: Colors.white,
+          backgroundColor: primary,
+          foregroundColor: cs.onPrimary,
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
         ),
@@ -532,12 +539,12 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
     ]),
   );
 
-  Widget _buildEmpty() => const Center(
+  Widget _buildEmpty({required ColorScheme cs}) => Center(
     child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.inventory_2_outlined, color: Colors.black26, size: 40),
-      SizedBox(height: 10),
+      Icon(Icons.inventory_2_outlined, color: cs.onSurface.withValues(alpha: 0.32), size: 40),
+      const SizedBox(height: 10),
       Text('No products available right now.',
-          style: TextStyle(color: Colors.black54, fontSize: 13)),
+          style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 13)),
     ]),
   );
 }
@@ -746,31 +753,37 @@ class _MarqueeRowState extends State<_MarqueeRow>
           Positioned(
             left: _kSidePad, top: 0, bottom: 0,
             child: IgnorePointer(
-              child: Container(
-                width: 24,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                    colors: [Colors.white, Colors.transparent],
+              child: Builder(builder: (ctx) {
+                final bg = Theme.of(ctx).scaffoldBackgroundColor;
+                return Container(
+                  width: 24,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [bg, Colors.transparent],
+                    ),
                   ),
-                ),
-              ),
+                );
+              }),
             ),
           ),
           Positioned(
             right: _kSidePad, top: 0, bottom: 0,
             child: IgnorePointer(
-              child: Container(
-                width: 24,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.centerRight,
-                    end: Alignment.centerLeft,
-                    colors: [Colors.white, Colors.transparent],
+              child: Builder(builder: (ctx) {
+                final bg = Theme.of(ctx).scaffoldBackgroundColor;
+                return Container(
+                  width: 24,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerRight,
+                      end: Alignment.centerLeft,
+                      colors: [bg, Colors.transparent],
+                    ),
                   ),
-                ),
-              ),
+                );
+              }),
             ),
           ),
         ],
@@ -892,12 +905,13 @@ class _ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs      = Theme.of(context).colorScheme;
+    final primary = cs.primary;
     final unavailable = !slot.isAvailable;
 
     return Semantics(
       label: '${slot.productName}'
           '${slot.productBrand != null ? ', by ${slot.productBrand}' : ''}'
-          ', price ${slot.priceFormatted}'
           ', ${slot.isOutOfStock ? "out of stock" : "${slot.currentStock} in stock"}'
           '${!slot.isAvailable ? ", unavailable" : ""}',
       button: slot.isAvailable,
@@ -907,11 +921,11 @@ class _ProductCard extends StatelessWidget {
       child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            color: Colors.white,
+            color: cs.surface,
             border: Border.all(
               color: unavailable
                   ? Colors.transparent
-                  : const Color(0xFF007ACC),
+                  : primary,
               width: 2.0,
             ),
             boxShadow: [
@@ -934,7 +948,7 @@ class _ProductCard extends StatelessWidget {
                   borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(13)),
                   child: Stack(fit: StackFit.expand, children: [
-                    _buildImage(),
+                    _buildImage(cs: cs, primary: primary),
                     if (slot.isOutOfStock)
                       _buildBadge('OUT OF STOCK', Colors.black87),
                     if (slot.isFault)
@@ -970,8 +984,7 @@ class _ProductCard extends StatelessWidget {
                       if (slot.productBrand != null)
                         Text(slot.productBrand!,
                             style: TextStyle(
-                              color: const Color(0xFF007ACC)
-                                  .withValues(alpha: 0.75),
+                              color: primary.withValues(alpha: 0.75),
                               fontSize: 9, fontWeight: FontWeight.w600,
                               letterSpacing: 0.4,
                             ),
@@ -980,31 +993,24 @@ class _ProductCard extends StatelessWidget {
                       // Nombre
                       Expanded(
                         child: Text(slot.productName,
-                            style: const TextStyle(color: Colors.black87,
+                            style: TextStyle(color: cs.onSurface,
                                 fontSize: 11, fontWeight: FontWeight.w600,
                                 height: 1.2),
                             maxLines: 2, overflow: TextOverflow.ellipsis),
                       ),
-                      // Precio + stock
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(slot.priceFormatted,
-                              style: const TextStyle(
-                                color: Color(0xFF007ACC),
-                                fontSize: 15, fontWeight: FontWeight.bold,
-                              )),
-                          Text('${slot.currentStock} left',
-                              style: TextStyle(
-                                color: slot.currentStock <= 3
-                                    ? Colors.orangeAccent
-                                    : Colors.black54,
-                                fontSize: 9,
-                              )),
-                        ],
+                      // Stock indicator (prices hidden — kiosk is lottery-only)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Text('${slot.currentStock} left',
+                            style: TextStyle(
+                              color: slot.currentStock <= 3
+                                  ? Colors.orangeAccent
+                                  : cs.onSurface.withValues(alpha: 0.65),
+                              fontSize: 10,
+                            )),
                       ),
                       const SizedBox(height: 4),
-                      _buildStockBar(),
+                      _buildStockBar(primary: primary),
                     ],
                   ),
                 ),
@@ -1016,29 +1022,29 @@ class _ProductCard extends StatelessWidget {
     );
   }
 
-  Widget _buildImage() {
+  Widget _buildImage({required ColorScheme cs, required Color primary}) {
     if (slot.productImage != null && slot.productImage!.isNotEmpty) {
       return CachedNetworkImage(
         imageUrl: slot.productImage!,
         fit: BoxFit.cover,
         memCacheWidth: 300, memCacheHeight: 400,
-        placeholder: (_, __) => Container(color: const Color(0xFFF0F4F8)),
-        errorWidget: (_, __, ___) => _placeholder(),
+        placeholder: (_, __) => Container(color: cs.surfaceContainerHighest),
+        errorWidget: (_, __, ___) => _placeholder(cs: cs, primary: primary),
       );
     }
-    return _placeholder();
+    return _placeholder(cs: cs, primary: primary);
   }
 
-  Widget _placeholder() => Container(
-    color: const Color(0xFFF0F4F8),
+  Widget _placeholder({required ColorScheme cs, required Color primary}) => Container(
+    color: cs.surfaceContainerHighest,
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
       Icon(Icons.inventory_2_outlined,
-          color: const Color(0xFF007ACC).withValues(alpha: 0.25), size: 36),
+          color: primary.withValues(alpha: 0.25), size: 36),
       if (slot.productBrand != null) ...[
         const SizedBox(height: 4),
         Text(slot.productBrand!,
-            style: const TextStyle(
-                color: Colors.black26, fontSize: 9),
+            style: TextStyle(
+                color: cs.onSurface.withValues(alpha: 0.32), fontSize: 9),
             textAlign: TextAlign.center),
       ],
     ]),
@@ -1052,7 +1058,7 @@ class _ProductCard extends StatelessWidget {
             fontWeight: FontWeight.bold, letterSpacing: 1))),
   );
 
-  Widget _buildStockBar() {
+  Widget _buildStockBar({required Color primary}) {
     final ratio = slot.maxStock > 0
         ? (slot.currentStock / slot.maxStock).clamp(0.0, 1.0)
         : 0.0;
@@ -1060,7 +1066,7 @@ class _ProductCard extends StatelessWidget {
         ? Colors.red.withValues(alpha: 0.6)
         : ratio <= 0.3
             ? Colors.orange.withValues(alpha: 0.8)
-            : const Color(0xFF007ACC).withValues(alpha: 0.7);
+            : primary.withValues(alpha: 0.7);
     return ClipRRect(
       borderRadius: BorderRadius.circular(3),
       child: LinearProgressIndicator(

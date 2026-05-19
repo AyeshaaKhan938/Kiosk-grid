@@ -114,6 +114,7 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
             lineNumber:  result.lineNumber,
             machineNo:   result.machineNo,
             lotteryCode: result.code,
+            tier:        result.tier,
             slot:        widget.slot,
             productName: result.productName,
           ),
@@ -146,8 +147,12 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
 
   @override
   Widget build(BuildContext context) {
+    final cs      = Theme.of(context).colorScheme;
+    final bg      = Theme.of(context).scaffoldBackgroundColor;
+    final primary = cs.primary;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: bg,
       body: Stack(
         children: [
           // Contenido: arriba = branding/animación · abajo = input
@@ -155,12 +160,12 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
             child: Column(
               children: [
                 // Mitad superior — animación + título
-                Expanded(flex: 45, child: _buildTopPanel()),
+                Expanded(flex: 45, child: _buildTopPanel(cs: cs, bg: bg, primary: primary)),
                 // Divisor
                 Container(height: 1,
-                    color: const Color(0xFF007ACC).withValues(alpha: 0.15)),
+                    color: primary.withValues(alpha: 0.15)),
                 // Mitad inferior — formulario
-                Expanded(flex: 55, child: _buildBottomPanel()),
+                Expanded(flex: 55, child: _buildBottomPanel(cs: cs, bg: bg, primary: primary)),
               ],
             ),
           ),
@@ -177,12 +182,12 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.06),
+                      color: cs.onSurface.withValues(alpha: 0.06),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.black12),
+                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.12)),
                     ),
-                    child: const Icon(Icons.arrow_back_ios_new_rounded,
-                        color: Colors.black54, size: 16),
+                    child: Icon(Icons.arrow_back_ios_new_rounded,
+                        color: cs.onSurface.withValues(alpha: 0.65), size: 16),
                   ),
                 ),
               ),
@@ -195,19 +200,19 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
 
   // ── Panel superior — icono centrado arriba, texto debajo ─────────────────
 
-  Widget _buildTopPanel() {
+  Widget _buildTopPanel({required ColorScheme cs, required Color bg, required Color primary}) {
     return Container(
-      color: const Color(0xFFF5F7FA),
+      color: cs.surfaceContainerHighest,
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Icono / animación
-            _buildCenterAnimation(),
+            _buildCenterAnimation(cs: cs, primary: primary),
             const SizedBox(height: 14),
             // Título
-            const Text('🎟  LOTTERY COUPON',
-                style: TextStyle(color: Colors.black87, fontSize: 15,
+            Text('🎟  LOTTERY COUPON',
+                style: TextStyle(color: cs.onSurface, fontSize: 15,
                     fontWeight: FontWeight.bold, letterSpacing: 1.5)),
             const SizedBox(height: 6),
             // Descripción
@@ -216,13 +221,13 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
                   ? 'Redeeming for: ${widget.slot!.productName}'
                   : 'Enter the code on your coupon to reveal your special price.',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.black54, fontSize: 12, height: 1.5),
+              style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 12, height: 1.5),
             ),
             // Estado
             if (_state == _LotteryState.validating) ...[
               const SizedBox(height: 8),
-              const Text('Validating…',
-                  style: TextStyle(color: Color(0xFF007ACC),
+              Text('Validating…',
+                  style: TextStyle(color: primary,
                       fontSize: 12, fontWeight: FontWeight.w600)),
             ],
             if (_state == _LotteryState.success) ...[
@@ -237,7 +242,7 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
     );
   }
 
-  Widget _buildCenterAnimation() {
+  Widget _buildCenterAnimation({required ColorScheme cs, required Color primary}) {
     switch (_state) {
       case _LotteryState.validating:
         return _SpinningWheel(controller: _spinCtrl);
@@ -281,12 +286,12 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
             shape: BoxShape.circle,
             gradient: RadialGradient(
               colors: [
-                const Color(0xFF007ACC).withValues(alpha: 0.3),
-                const Color(0xFF007ACC).withValues(alpha: 0.05),
+                primary.withValues(alpha: 0.3),
+                primary.withValues(alpha: 0.05),
               ],
             ),
             border: Border.all(
-                color: const Color(0xFF007ACC).withValues(alpha: 0.4), width: 2),
+                color: primary.withValues(alpha: 0.4), width: 2),
           ),
           child: const Center(
             child: Text('🎟', style: TextStyle(fontSize: 36)),
@@ -297,9 +302,9 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
 
   // ── Panel inferior (formulario) ──────────────────────────────────────────
 
-  Widget _buildBottomPanel() {
+  Widget _buildBottomPanel({required ColorScheme cs, required Color bg, required Color primary}) {
     return Container(
-      color: Colors.white,
+      color: bg,
       child: Center(
         child: SizedBox(
           width: 520, // ancho máximo — centrado en pantalla
@@ -309,15 +314,15 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 // Input
-                _buildCodeInput(),
+                _buildCodeInput(cs: cs, primary: primary),
                 if (_state == _LotteryState.error) ...[
                   const SizedBox(height: 8),
-                  _buildErrorMsg(),
+                  _buildErrorMsg(cs: cs, primary: primary),
                 ],
                 const SizedBox(height: 12),
                 // Botón
                 SizedBox(width: double.infinity, height: 48,
-                    child: _buildValidateButton()),
+                    child: _buildValidateButton(cs: cs, primary: primary)),
               ],
             ),
           ),
@@ -326,7 +331,7 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
     );
   }
 
-  Widget _buildCodeInput() {
+  Widget _buildCodeInput({required ColorScheme cs, required Color primary}) {
     final enabled = _state == _LotteryState.idle || _state == _LotteryState.error;
     return Container(
       decoration: BoxDecoration(
@@ -334,10 +339,10 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
         border: Border.all(
           color: _state == _LotteryState.error
               ? Colors.redAccent.withValues(alpha: 0.6)
-              : const Color(0xFF007ACC).withValues(alpha: 0.4),
+              : primary.withValues(alpha: 0.4),
           width: 1.5,
         ),
-        color: const Color(0xFFF5F7FA),
+        color: cs.surfaceContainerHighest,
       ),
       child: TextField(
         controller: _codeCtrl,
@@ -349,8 +354,8 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
           UpperCaseTextFormatter(),
           LengthLimitingTextInputFormatter(20),
         ],
-        style: const TextStyle(
-          color: Colors.black87,
+        style: TextStyle(
+          color: cs.onSurface,
           fontSize: 22,
           fontWeight: FontWeight.bold,
           letterSpacing: 5,
@@ -359,19 +364,19 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
         textAlign: TextAlign.center,
         decoration: InputDecoration(
           hintText: 'XXXXXX',
-          hintStyle: const TextStyle(
-            color: Colors.black26,
+          hintStyle: TextStyle(
+            color: cs.onSurface.withValues(alpha: 0.32),
             fontSize: 22,
             letterSpacing: 5,
           ),
           labelText: 'Enter lottery code',
-          labelStyle: const TextStyle(color: Colors.black54, fontSize: 14),
+          labelStyle: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 14),
           floatingLabelBehavior: FloatingLabelBehavior.never,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           suffixIcon: _codeCtrl.text.isNotEmpty && enabled
               ? IconButton(
-                  icon: const Icon(Icons.clear_rounded, color: Colors.black38),
+                  icon: Icon(Icons.clear_rounded, color: cs.onSurface.withValues(alpha: 0.48)),
                   onPressed: () { _codeCtrl.clear(); setState(() {}); },
                 )
               : null,
@@ -382,7 +387,7 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
     );
   }
 
-  Widget _buildErrorMsg() {
+  Widget _buildErrorMsg({required ColorScheme cs, required Color primary}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
@@ -395,15 +400,15 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
           ),
           TextButton(
             onPressed: _resetToIdle,
-            child: const Text('Try again',
-                style: TextStyle(color: Color(0xFF007ACC), fontSize: 13)),
+            child: Text('Try again',
+                style: TextStyle(color: primary, fontSize: 13)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildValidateButton() {
+  Widget _buildValidateButton({required ColorScheme cs, required Color primary}) {
     final loading = _state == _LotteryState.validating;
     final success = _state == _LotteryState.success;
 
@@ -415,14 +420,14 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
         style: ElevatedButton.styleFrom(
           backgroundColor: success
               ? Colors.green
-              : (_canValidate ? const Color(0xFF007ACC) : Colors.black12),
-          foregroundColor: Colors.white,
+              : (_canValidate ? primary : cs.onSurface.withValues(alpha: 0.12)),
+          foregroundColor: cs.onPrimary,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           elevation: _canValidate ? 6 : 0,
         ),
         child: loading
-            ? const SizedBox(width: 24, height: 24,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+            ? SizedBox(width: 24, height: 24,
+                child: CircularProgressIndicator(color: cs.onPrimary, strokeWidth: 2.5))
             : success
                 ? const Row(mainAxisSize: MainAxisSize.min, children: [
                     Icon(Icons.check_rounded, size: 22),

@@ -10,9 +10,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///   2. .env               ← fallback solo para desarrollo local
 class AppConfig {
   // ── Claves SharedPreferences ─────────────────────────────────────────────
-  static const _kApiBaseUrl    = 'cfg_api_base_url';
-  static const _kMachineNo     = 'cfg_machine_no';
-  static const _kLotteryToken  = 'cfg_lottery_token';
+  static const _kApiBaseUrl       = 'cfg_api_base_url';
+  static const _kMachineNo        = 'cfg_machine_no';
+  /// Token para el draw de lotería (por sorteo, guardado en DB del backend).
+  /// Solo habilita el botón de lotería visible al cliente.
+  static const _kLotteryToken     = 'cfg_lottery_token';
+  /// Bearer token de gestión para los endpoints /admin/* del backend.
+  /// Requerido para usar el Admin Panel (dashboard, inventario, órdenes).
+  static const _kManagementToken  = 'cfg_management_token';
   static const _kAdminPin         = 'cfg_admin_pin';
   static const _kLanguage         = 'cfg_language';
   static const _kConfigured       = 'cfg_is_configured';
@@ -32,6 +37,21 @@ class AppConfig {
 
   static Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+    await _migrate();
+  }
+
+  /// Migración de datos: si la app tenía un lotteryToken guardado con la clave
+  /// vieja y managementToken está vacío, promovemos ese valor como managementToken.
+  /// Esto garantiza que instalaciones previas no pierdan el token al actualizar.
+  static Future<void> _migrate() async {
+    final p = _prefs!;
+    final hasNewKey = p.getString(_kManagementToken)?.isNotEmpty == true;
+    if (!hasNewKey) {
+      final oldToken = p.getString(_kLotteryToken) ?? '';
+      if (oldToken.isNotEmpty) {
+        await p.setString(_kManagementToken, oldToken);
+      }
+    }
   }
 
   // ── Getters ──────────────────────────────────────────────────────────────
@@ -47,6 +67,12 @@ class AppConfig {
   static String get lotteryToken =>
       _prefs?.getString(_kLotteryToken) ??
       dotenv.env['LOTTERY_TOKEN'] ?? '';
+
+  /// Bearer token de gestión → habilita el Admin Panel (dashboard, inventario, órdenes).
+  /// Completamente independiente del lottery draw token.
+  static String get managementToken =>
+      _prefs?.getString(_kManagementToken) ??
+      dotenv.env['MANAGEMENT_TOKEN'] ?? '';
 
   static String get adminPin =>
       _prefs?.getString(_kAdminPin) ?? '1234';
@@ -65,6 +91,14 @@ class AppConfig {
 
   static Future<void> setSimulateDispense(bool value) async =>
       _prefs?.setBool(_kSimulateDispense, value);
+
+  /// Guarda el lottery draw token (botón de sorteo para clientes).
+  static Future<void> setLotteryToken(String token) async =>
+      _prefs?.setString(_kLotteryToken, token.trim());
+
+  /// Guarda el management token (Bearer para el Admin Panel).
+  static Future<void> setManagementToken(String token) async =>
+      _prefs?.setString(_kManagementToken, token.trim());
 
   // ── Backend mode ─────────────────────────────────────────────────────────
 
@@ -114,18 +148,18 @@ class AppConfig {
   static Future<void> save({
     required String apiBaseUrl,
     required String machineNo,
-    required String lotteryToken,
+    required String managementToken,
     required String adminPin,
     required String language,
   }) async {
     final p = _prefs!;
     await Future.wait([
-      p.setString(_kApiBaseUrl,   apiBaseUrl.trim()),
-      p.setString(_kMachineNo,    machineNo.trim()),
-      p.setString(_kLotteryToken, lotteryToken.trim()),
-      p.setString(_kAdminPin,     adminPin.trim()),
-      p.setString(_kLanguage,     language),
-      p.setBool  (_kConfigured,   true),
+      p.setString(_kApiBaseUrl,      apiBaseUrl.trim()),
+      p.setString(_kMachineNo,       machineNo.trim()),
+      p.setString(_kManagementToken, managementToken.trim()),
+      p.setString(_kAdminPin,        adminPin.trim()),
+      p.setString(_kLanguage,        language),
+      p.setBool  (_kConfigured,      true),
     ]);
   }
 

@@ -4,20 +4,16 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'screens/idle_screen.dart';
 import 'screens/setup_wizard_screen.dart';
 import 'services/app_config.dart';
+import 'services/accessibility_settings.dart';
+import 'widgets/accessibility_fab.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 1. Cargar .env (fallback para desarrollo)
   await dotenv.load(fileName: '.env');
-
-  // 2. Cargar configuración persistente (SharedPreferences)
   await AppConfig.init();
 
-  // Kiosk mode: fullscreen, sin status bar ni navigation bar
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-
-  // Orientación portrait para el kiosk vertical
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -28,8 +24,29 @@ Future<void> main() async {
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-class VMFSApp extends StatelessWidget {
+class VMFSApp extends StatefulWidget {
   const VMFSApp({super.key});
+
+  @override
+  State<VMFSApp> createState() => _VMFSAppState();
+}
+
+class _VMFSAppState extends State<VMFSApp> {
+  final _a11y = AccessibilitySettings.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _a11y.addListener(_onSettingsChanged);
+  }
+
+  @override
+  void dispose() {
+    _a11y.removeListener(_onSettingsChanged);
+    super.dispose();
+  }
+
+  void _onSettingsChanged() => setState(() {});
 
   @override
   Widget build(BuildContext context) {
@@ -37,42 +54,27 @@ class VMFSApp extends StatelessWidget {
       title: 'VMFS USA',
       debugShowCheckedModeBanner: false,
       navigatorKey: navigatorKey,
-      theme: ThemeData(
-        colorScheme: const ColorScheme.light(
-          primary: Color(0xFF007ACC),
-          onPrimary: Colors.white,
-          surface: Colors.white,
-          onSurface: Colors.black87,
-        ),
-        scaffoldBackgroundColor: Colors.white,
-        fontFamily: 'Roboto',
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF007ACC),
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-        ),
-      ),
-      // Si la app está configurada → pantalla idle con anuncios.
-      // Si es primera instalación → Setup Wizard.
-      home: Builder(builder: (context) {
-        final mq = MediaQuery.of(context);
+      // Tema cambia dinámicamente según la configuración de accesibilidad
+      theme: _a11y.buildTheme(),
+      // builder: inyecta el FAB ♿ en TODAS las pantallas + aplica text scale
+      builder: (context, child) {
+        final scale = _a11y.textScale;
+        final mq    = MediaQuery.of(context);
         return MediaQuery(
           data: mq.copyWith(
-            textScaler: mq.textScaler.clamp(
-              minScaleFactor: 1.0,
-              maxScaleFactor: 1.3,
-            ),
+            textScaler: TextScaler.linear(scale),
           ),
-          child: AppConfig.isConfigured
-              ? const IdleScreen()
-              : const SetupWizardScreen(),
+          child: Stack(
+            children: [
+              child!,
+              const AccessibilityFAB(),
+            ],
+          ),
         );
-      }),
+      },
+      home: AppConfig.isConfigured
+          ? const IdleScreen()
+          : const SetupWizardScreen(),
     );
   }
 }
-

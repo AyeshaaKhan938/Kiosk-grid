@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import '../models/machine_slot.dart';
+import '../services/api_service.dart';
 import '../services/app_config.dart';
 import '../services/vending_machine_service.dart';
 
@@ -16,6 +19,10 @@ class ResultScreen extends StatefulWidget {
 
   /// Código ganador (trazabilidad).
   final String lotteryCode;
+
+  /// Tier rolled client-side ("A" or "B") — empty when this isn't a
+  /// scratch-card flow. Used to call /scratch-card/confirm after dispense.
+  final String tier;
 
   /// Slot seleccionado por el usuario (para mostrar nombre del producto).
   final MachineSlot? slot;
@@ -34,6 +41,7 @@ class ResultScreen extends StatefulWidget {
     this.lineNumber,
     this.machineNo = '',
     this.lotteryCode = '',
+    this.tier = '',
     this.slot,
     this.productName,
     this.skipCountdown = false,
@@ -160,16 +168,15 @@ class _ResultScreenState extends State<ResultScreen>
     if (_state != _FlowState.showingPrice) return;
     _cancelAutoBuy();
 
-    SemanticsService.announce('Processing payment, please wait.', TextDirection.ltr);
-    setState(() => _state = _FlowState.paying);
+    // Lottery redemptions are free — skip the payment animation entirely
+    // and go straight to dispense.
+    if (widget.tier.isEmpty) {
+      SemanticsService.announce('Processing payment, please wait.', TextDirection.ltr);
+      setState(() => _state = _FlowState.paying);
+      await Future.delayed(const Duration(milliseconds: 2500));
+      if (!mounted) return;
+    }
 
-    // Simular procesamiento de pago (2.5 s)
-    // En producción: integrar con cash acceptor / card reader hardware
-    await Future.delayed(const Duration(milliseconds: 2500));
-
-    if (!mounted) return;
-
-    // Pago aprobado → iniciar despacho
     await _dispenseProduct();
   }
 
@@ -186,6 +193,19 @@ class _ResultScreenState extends State<ResultScreen>
       simulateSuccess: AppConfig.simulateDispense,
       onProgress: (_) {},
     );
+
+    // Report tier-specific outcome to the Ten Point Media redemption record.
+    // Only fires for scratch-card flows (tier is non-empty there).
+    if (widget.tier.isNotEmpty && widget.lotteryCode.isNotEmpty) {
+      unawaited(ApiService.confirmScratchCard(
+        code:        widget.lotteryCode,
+        tier:        widget.tier,
+        lineNumber:  widget.lineNumber!,
+        prizeAmount: double.tryParse(widget.price) ?? 0.0,
+        success:     result.status == DispenseStatus.success,
+        error:       result.errorMessage,
+      ));
+    }
 
     if (!mounted) return;
 
@@ -234,8 +254,12 @@ class _ResultScreenState extends State<ResultScreen>
 
   @override
   Widget build(BuildContext context) {
+    final cs      = Theme.of(context).colorScheme;
+    final bg      = Theme.of(context).scaffoldBackgroundColor;
+    final primary = cs.primary;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: bg,
       body: Stack(
         children: [
           // Contenido principal
@@ -245,13 +269,13 @@ class _ResultScreenState extends State<ResultScreen>
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   // ── Cabecera ───────────────────────────────────────────
-                  _buildHeader(),
+                  _buildHeader(cs: cs),
                   const SizedBox(height: 32),
 
                   // ── Precio ganado (animado) ────────────────────────────
-                  if (_showPrice) _buildPriceCard(),
+                  if (_showPrice) _buildPriceCard(cs: cs, primary: primary),
                   if (!_showPrice)
-                    const CircularProgressIndicator(color: Color(0xFF007ACC)),
+                    CircularProgressIndicator(color: primary),
 
                   const SizedBox(height: 36),
 
@@ -259,7 +283,7 @@ class _ResultScreenState extends State<ResultScreen>
                   // AnimatedBuilder para que el ring del auto-buy se mueva suave
                   AnimatedBuilder(
                     animation: _countdownController,
-                    builder: (_, __) => _buildActionSection(),
+                    builder: (_, __) => _buildActionSection(cs: cs, primary: primary),
                   ),
                 ],
               ),
@@ -272,13 +296,12 @@ class _ResultScreenState extends State<ResultScreen>
             left: 90,
             child: Row(
               children: [
-                const Icon(Icons.storefront,
-                    color: Color(0xFF007ACC), size: 24),
+                Icon(Icons.storefront, color: primary, size: 24),
                 const SizedBox(width: 8),
                 Text(
                   widget.slot?.productName ?? widget.productName ?? 'VMFS USA',
-                  style: const TextStyle(
-                    color: Colors.black54,
+                  style: TextStyle(
+                    color: cs.onSurface.withValues(alpha: 0.65),
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 1,
@@ -294,13 +317,13 @@ class _ResultScreenState extends State<ResultScreen>
 
   // ── Cabecera ───────────────────────────────────────────────────────────────
 
-  Widget _buildHeader() {
+  Widget _buildHeader({required ColorScheme cs}) {
     return Column(
       children: [
-        const Text(
+        Text(
           '🎉  CONGRATULATIONS!',
           style: TextStyle(
-            color: Colors.black87,
+            color: cs.onSurface,
             fontSize: 30,
             fontWeight: FontWeight.bold,
             letterSpacing: 3,
@@ -310,8 +333,8 @@ class _ResultScreenState extends State<ResultScreen>
         Text(
           widget.message,
           textAlign: TextAlign.center,
-          style: const TextStyle(
-              color: Colors.black54, fontSize: 17, letterSpacing: 0.5),
+          style: TextStyle(
+              color: cs.onSurface.withValues(alpha: 0.65), fontSize: 17, letterSpacing: 0.5),
         ),
       ],
     );
@@ -319,7 +342,7 @@ class _ResultScreenState extends State<ResultScreen>
 
   // ── Tarjeta de precio ──────────────────────────────────────────────────────
 
-  Widget _buildPriceCard() {
+  Widget _buildPriceCard({required ColorScheme cs, required Color primary}) {
     return FadeTransition(
       opacity: _fadeAnim,
       child: ScaleTransition(
@@ -331,11 +354,10 @@ class _ResultScreenState extends State<ResultScreen>
                 const EdgeInsets.symmetric(horizontal: 60, vertical: 28),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: const Color(0xFF007ACC), width: 2),
+              border: Border.all(color: primary, width: 2),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF007ACC)
-                      .withValues(alpha: _glowAnim.value),
+                  color: primary.withValues(alpha: _glowAnim.value),
                   blurRadius: 60,
                   spreadRadius: 10,
                 ),
@@ -344,8 +366,8 @@ class _ResultScreenState extends State<ResultScreen>
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  const Color(0xFF007ACC).withValues(alpha: 0.08),
-                  const Color(0xFF007ACC).withValues(alpha: 0.03),
+                  primary.withValues(alpha: 0.08),
+                  primary.withValues(alpha: 0.03),
                 ],
               ),
             ),
@@ -353,10 +375,10 @@ class _ResultScreenState extends State<ResultScreen>
           ),
           child: Column(
             children: [
-              const Text(
+              Text(
                 'YOUR PRICE',
                 style: TextStyle(
-                  color: Colors.black38,
+                  color: cs.onSurface.withValues(alpha: 0.48),
                   fontSize: 13,
                   letterSpacing: 4,
                   fontWeight: FontWeight.w500,
@@ -365,8 +387,8 @@ class _ResultScreenState extends State<ResultScreen>
               const SizedBox(height: 8),
               Text(
                 '\$${widget.price}',
-                style: const TextStyle(
-                  color: Colors.black87,
+                style: TextStyle(
+                  color: cs.onSurface,
                   fontSize: 76,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 2,
@@ -378,7 +400,7 @@ class _ResultScreenState extends State<ResultScreen>
                 const SizedBox(height: 6),
                 Text(
                   'for ${widget.slot?.productName ?? widget.productName}',
-                  style: const TextStyle(color: Colors.black54, fontSize: 14),
+                  style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 14),
                 ),
               ],
             ],
@@ -390,7 +412,7 @@ class _ResultScreenState extends State<ResultScreen>
 
   // ── Sección de acciones ────────────────────────────────────────────────────
 
-  Widget _buildActionSection() {
+  Widget _buildActionSection({required ColorScheme cs, required Color primary}) {
     switch (_state) {
       // ── 1. Precio ganado → auto-compra en 5 s ─────────────────────────
       case _FlowState.showingPrice:
@@ -403,6 +425,7 @@ class _ResultScreenState extends State<ResultScreen>
                 progress: _countdownController.value,
                 secondsLeft: _autoBuyRemaining,
                 price: widget.price,
+                cs: cs,
                 onCancel: () {
                   _cancelAutoBuy();
                   Navigator.pop(context);
@@ -416,18 +439,18 @@ class _ResultScreenState extends State<ResultScreen>
         // Sin lineNumber → solo mostrar precio y volver
         return Column(
           children: [
-            const Text(
+            Text(
               'No product slot assigned',
-              style: TextStyle(color: Colors.black54, fontSize: 14),
+              style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 14),
             ),
             const SizedBox(height: 16),
             TextButton.icon(
               onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.arrow_back_rounded,
-                  color: Colors.black54, size: 18),
-              label: const Text(
+              icon: Icon(Icons.arrow_back_rounded,
+                  color: cs.onSurface.withValues(alpha: 0.65), size: 18),
+              label: Text(
                 'Back to menu',
-                style: TextStyle(color: Colors.black54, fontSize: 15),
+                style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 15),
               ),
             ),
           ],
@@ -436,15 +459,15 @@ class _ResultScreenState extends State<ResultScreen>
       // ── 2. Procesando pago ─────────────────────────────────────────────
       case _FlowState.paying:
         return _StatusCard(
-          icon: const SizedBox(
+          icon: SizedBox(
             width: 42,
             height: 42,
-            child: CircularProgressIndicator(
-                color: Color(0xFF007ACC), strokeWidth: 3),
+            child: CircularProgressIndicator(color: primary, strokeWidth: 3),
           ),
           label: 'Processing payment…',
           sublabel: 'Please wait, do not remove your card',
-          color: const Color(0xFF007ACC),
+          color: primary,
+          cs: cs,
         );
 
       // ── 3. Despachando producto ────────────────────────────────────────
@@ -459,6 +482,7 @@ class _ResultScreenState extends State<ResultScreen>
           label: 'Dispensing your product!',
           sublabel: 'The machine is preparing your item…',
           color: Colors.greenAccent,
+          cs: cs,
         );
 
       // ── 4. Éxito ───────────────────────────────────────────────────────
@@ -469,11 +493,12 @@ class _ResultScreenState extends State<ResultScreen>
           label: 'Enjoy your product! 🎉',
           sublabel: 'Please collect it from the dispenser slot',
           color: Colors.greenAccent,
-          extra: const Padding(
-            padding: EdgeInsets.only(top: 10),
+          cs: cs,
+          extra: Padding(
+            padding: const EdgeInsets.only(top: 10),
             child: Text(
               'Returning to menu in 5 seconds…',
-              style: TextStyle(color: Colors.black38, fontSize: 12),
+              style: TextStyle(color: cs.onSurface.withValues(alpha: 0.48), fontSize: 12),
             ),
           ),
         );
@@ -488,6 +513,7 @@ class _ResultScreenState extends State<ResultScreen>
               label: 'Something went wrong',
               sublabel: _errorMsg,
               color: Colors.redAccent,
+              cs: cs,
             ),
             const SizedBox(height: 20),
             ElevatedButton.icon(
@@ -497,8 +523,8 @@ class _ResultScreenState extends State<ResultScreen>
                   style:
                       TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF007ACC),
-                foregroundColor: Colors.white,
+                backgroundColor: primary,
+                foregroundColor: cs.onPrimary,
                 padding: const EdgeInsets.symmetric(
                     horizontal: 36, vertical: 16),
                 shape: RoundedRectangleBorder(
@@ -522,6 +548,7 @@ class _AutoBuyRing extends StatelessWidget {
   final double progress;       // 0.0 → 1.0 (del AnimationController)
   final int secondsLeft;
   final String price;
+  final ColorScheme cs;
   final VoidCallback onCancel;
   final VoidCallback onBuyNow;
   final VoidCallback onNeedMoreTime;
@@ -530,6 +557,7 @@ class _AutoBuyRing extends StatelessWidget {
     required this.progress,
     required this.secondsLeft,
     required this.price,
+    required this.cs,
     required this.onCancel,
     required this.onBuyNow,
     required this.onNeedMoreTime,
@@ -548,7 +576,7 @@ class _AutoBuyRing extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               // Fondo del ring (gris)
-              CircularProgressIndicator(
+              const CircularProgressIndicator(
                 value: 1.0,
                 strokeWidth: 7,
                 color: Colors.white12,
@@ -567,16 +595,16 @@ class _AutoBuyRing extends StatelessWidget {
                   children: [
                     Text(
                       '$secondsLeft',
-                      style: const TextStyle(
-                        color: Colors.black87,
+                      style: TextStyle(
+                        color: cs.onSurface,
                         fontSize: 38,
                         fontWeight: FontWeight.bold,
                         height: 1,
                       ),
                     ),
-                    const Text(
+                    Text(
                       's',
-                      style: TextStyle(color: Colors.black38, fontSize: 13),
+                      style: TextStyle(color: cs.onSurface.withValues(alpha: 0.48), fontSize: 13),
                     ),
                   ],
                 ),
@@ -590,8 +618,8 @@ class _AutoBuyRing extends StatelessWidget {
         // ── Texto de estado ──────────────────────────────────────────────
         Text(
           'Purchasing \$$price automatically…',
-          style: const TextStyle(
-            color: Colors.black54,
+          style: TextStyle(
+            color: cs.onSurface.withValues(alpha: 0.65),
             fontSize: 14,
             letterSpacing: 0.5,
           ),
@@ -647,18 +675,18 @@ class _AutoBuyRing extends StatelessWidget {
         // ── Cancelar ─────────────────────────────────────────────────────
         TextButton.icon(
           onPressed: onCancel,
-          icon: const Icon(Icons.close_rounded, color: Colors.black38, size: 16),
-          label: const Text(
+          icon: Icon(Icons.close_rounded, color: cs.onSurface.withValues(alpha: 0.48), size: 16),
+          label: Text(
             'Cancel',
-            style: TextStyle(color: Colors.black38, fontSize: 14),
+            style: TextStyle(color: cs.onSurface.withValues(alpha: 0.48), fontSize: 14),
           ),
         ),
         const SizedBox(height: 8),
         TextButton.icon(
           onPressed: onNeedMoreTime,
-          icon: const Icon(Icons.more_time_rounded, color: Color(0xFF007ACC), size: 16),
-          label: const Text('Need more time?',
-              style: TextStyle(color: Color(0xFF007ACC), fontSize: 13)),
+          icon: Icon(Icons.more_time_rounded, color: cs.primary, size: 16),
+          label: Text('Need more time?',
+              style: TextStyle(color: cs.primary, fontSize: 13)),
         ),
       ],
     );
@@ -671,6 +699,7 @@ class _StatusCard extends StatelessWidget {
   final String label;
   final String sublabel;
   final Color color;
+  final ColorScheme cs;
   final Widget? extra;
 
   const _StatusCard({
@@ -678,6 +707,7 @@ class _StatusCard extends StatelessWidget {
     required this.label,
     required this.sublabel,
     required this.color,
+    required this.cs,
     this.extra,
   });
 
@@ -709,8 +739,7 @@ class _StatusCard extends StatelessWidget {
           Text(
             sublabel,
             textAlign: TextAlign.center,
-            style:
-                const TextStyle(color: Colors.black54, fontSize: 14),
+            style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 14),
           ),
           if (extra != null) extra!,
         ],

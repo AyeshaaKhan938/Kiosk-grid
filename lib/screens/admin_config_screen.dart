@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:usb_serial/usb_serial.dart';
 import '../services/app_config.dart';
+import '../services/kiosk_lockdown.dart';
 import '../services/reyeah_service.dart';
 import '../services/vending_machine_service.dart';
 import 'setup_wizard_screen.dart';
+import 'admin/admin_shell_screen.dart';
 
 /// Panel de administración oculto — accesible vía gesto secreto + PIN.
 ///
@@ -53,6 +55,23 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
+          // ── Admin Panel entry ──────────────────────────────────────────
+          _buildAction(
+            icon: Icons.admin_panel_settings_rounded,
+            label: 'Admin Panel',
+            subtitle: AppConfig.managementToken.isNotEmpty
+                ? 'Dashboard, inventory, orders & lotteries'
+                : 'Requires Management Token — set it below',
+            color: AppConfig.managementToken.isNotEmpty
+                ? const Color(0xFF7C3AED)
+                : Colors.grey,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminShellScreen()),
+            ),
+          ),
+          const SizedBox(height: 20),
+
           // Sección: Config actual
           _buildInfoCard(),
           const SizedBox(height: 20),
@@ -76,7 +95,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             _buildAction(
               icon: Icons.edit_outlined,
               label: 'Edit Configuration',
-              subtitle: 'Change API URL, Machine No., Lottery Token or PIN',
+              subtitle: 'Change API URL, Machine No., Admin PIN',
               color: const Color(0xFF007ACC),
               onTap: () async {
                 await Navigator.push(
@@ -91,6 +110,28 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             const SizedBox(height: 12),
           ],
 
+          // ── Management Token (Admin Panel) ────────────────────────────
+          _buildSectionLabel('MANAGEMENT TOKEN'),
+          const SizedBox(height: 4),
+          const Text(
+            'Required to unlock the Admin Panel (dashboard, inventory, orders).',
+            style: TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+          const SizedBox(height: 10),
+          _ManagementTokenPanel(onSaved: () => setState(() {})),
+          const SizedBox(height: 20),
+
+          // ── Lottery Token (botón de sorteo) ───────────────────────────
+          _buildSectionLabel('LOTTERY'),
+          const SizedBox(height: 4),
+          const Text(
+            'Optional — enables the lottery draw button for customers.',
+            style: TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+          const SizedBox(height: 10),
+          _LotteryTokenPanel(onSaved: () => setState(() {})),
+          const SizedBox(height: 20),
+
           // ── Toggle: Simulate Dispense ──────────────────────────────────
           _buildSimulateToggle(),
           const SizedBox(height: 12),
@@ -102,6 +143,16 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             subtitle: 'Send Device ID request to the Control Board',
             color: const Color(0xFF00BCD4),
             onTap: _testUsb,
+          ),
+          const SizedBox(height: 12),
+
+          // ── Exit Kiosk Mode (unlock device for maintenance) ────────────
+          _buildAction(
+            icon: Icons.lock_open_rounded,
+            label: 'Exit Kiosk Mode',
+            subtitle: 'Unlock the tablet so you can update the app or access Settings. Re-locks on next app launch.',
+            color: const Color(0xFFFFB300),
+            onTap: _confirmExitKioskMode,
           ),
           const SizedBox(height: 12),
 
@@ -409,10 +460,16 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             _infoRow('Machine No.', AppConfig.machineNo),
             _infoRow('API URL', AppConfig.apiBaseUrl),
             _infoRow(
+              'Mgmt Token',
+              AppConfig.managementToken.isNotEmpty
+                  ? '${AppConfig.managementToken.substring(0, 8)}…'
+                  : '— not set',
+            ),
+            _infoRow(
               'Lottery Token',
               AppConfig.lotteryToken.isNotEmpty
                   ? '${AppConfig.lotteryToken.substring(0, 8)}…'
-                  : '—',
+                  : '— disabled',
             ),
           ],
           _infoRow('Admin PIN', '••••'),
@@ -501,6 +558,60 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     );
   }
 
+  // ── Exit Kiosk Mode ──────────────────────────────────────────────────────
+
+  Future<void> _confirmExitKioskMode() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1A2B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.lock_open_rounded, color: Color(0xFFFFB300)),
+            SizedBox(width: 8),
+            Text('Exit Kiosk Mode?',
+                style: TextStyle(color: Colors.white, fontSize: 18)),
+          ],
+        ),
+        content: const Text(
+          'This unpins the screen so you can press Home/Recents, install '
+          'updates, or access Android Settings. The app will re-lock the '
+          'screen the next time it launches.',
+          style: TextStyle(color: Colors.white54),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel',
+                style: TextStyle(color: Colors.white38)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Unlock',
+                style: TextStyle(
+                    color: Color(0xFFFFB300), fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final ok = await KioskLockdown.exitKioskMode();
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok
+            ? 'Kiosk mode disabled. You can now access Android.'
+            : 'Could not exit kiosk mode (already unlocked or not supported on this device).'),
+        backgroundColor: ok ? const Color(0xFF388E3C) : Colors.redAccent,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
   // ── Reset ────────────────────────────────────────────────────────────────
 
   Future<void> _confirmReset() async {
@@ -549,6 +660,326 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
 
 /// Formulario embebido para configurar las credenciales de Reyeah Cloud.
 /// Se muestra solo cuando backendMode == 'reyeah'.
+// ─────────────────────────────────────────────────────────────────────────────
+// Lottery / Management Token panel
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LotteryTokenPanel extends StatefulWidget {
+  final VoidCallback onSaved;
+  const _LotteryTokenPanel({required this.onSaved});
+
+  @override
+  State<_LotteryTokenPanel> createState() => _LotteryTokenPanelState();
+}
+
+class _LotteryTokenPanelState extends State<_LotteryTokenPanel> {
+  late final TextEditingController _ctrl;
+  bool _saving   = false;
+  bool _obscure  = true;
+  String? _saved;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: AppConfig.lotteryToken);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() { _saving = true; _saved = null; });
+    await AppConfig.setLotteryToken(_ctrl.text);
+    if (mounted) {
+      setState(() { _saving = false; _saved = 'Saved'; });
+      widget.onSaved();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasToken = AppConfig.lotteryToken.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1B2A),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: hasToken
+              ? const Color(0xFF007ACC).withValues(alpha: 0.5)
+              : Colors.orange.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(
+              hasToken ? Icons.confirmation_num_rounded : Icons.confirmation_num_outlined,
+              color: hasToken ? Colors.greenAccent : Colors.white38,
+              size: 16,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                hasToken
+                    ? 'Lottery button enabled for customers'
+                    : 'Lottery disabled — enter token to show the draw button',
+                style: TextStyle(
+                  color: hasToken ? Colors.greenAccent : Colors.white38,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _ctrl,
+                obscureText: _obscure,
+                style: const TextStyle(color: Colors.white, fontSize: 13,
+                    fontFamily: 'monospace'),
+                decoration: InputDecoration(
+                  hintText: 'Lottery draw token (per-lottery)',
+                  hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+                  filled: true,
+                  fillColor: const Color(0xFF060E18),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Colors.white12),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Colors.white12),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 10),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscure ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.white38, size: 16,
+                    ),
+                    onPressed: () => setState(() => _obscure = !_obscure),
+                  ),
+                ),
+                onChanged: (_) => setState(() => _saved = null),
+              ),
+            ),
+            const SizedBox(width: 10),
+            ElevatedButton(
+              onPressed: _saving ? null : _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF007ACC),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              child: _saving
+                  ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2,
+                          color: Colors.white))
+                  : Text(_saved ?? 'Save',
+                      style: const TextStyle(fontSize: 13,
+                          fontWeight: FontWeight.w600)),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          const Text(
+            'Find it in vms-cloud → Lotteries → Token.\n'
+            'Each lottery campaign has its own draw token.',
+            style: TextStyle(color: Colors.white24, fontSize: 11, height: 1.5),
+          ),
+          if (_ctrl.text.trim().isNotEmpty) ...[
+            const SizedBox(height: 6),
+            TextButton(
+              onPressed: () {
+                _ctrl.clear();
+                _save();
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.redAccent,
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(0, 28),
+              ),
+              child: const Text('Disable lottery draw button (clear token)',
+                  style: TextStyle(fontSize: 11)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Management Token Panel (Admin Panel access)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ManagementTokenPanel extends StatefulWidget {
+  final VoidCallback onSaved;
+  const _ManagementTokenPanel({required this.onSaved});
+
+  @override
+  State<_ManagementTokenPanel> createState() => _ManagementTokenPanelState();
+}
+
+class _ManagementTokenPanelState extends State<_ManagementTokenPanel> {
+  late final TextEditingController _ctrl;
+  bool _saving  = false;
+  bool _obscure = true;
+  String? _saved;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: AppConfig.managementToken);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() { _saving = true; _saved = null; });
+    await AppConfig.setManagementToken(_ctrl.text);
+    if (mounted) {
+      setState(() { _saving = false; _saved = 'Saved'; });
+      widget.onSaved();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasToken = AppConfig.managementToken.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1B2A),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: hasToken
+              ? const Color(0xFF7C3AED).withValues(alpha: 0.5)
+              : Colors.orange.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(
+              hasToken ? Icons.admin_panel_settings_rounded : Icons.warning_amber_rounded,
+              color: hasToken ? const Color(0xFF7C3AED) : Colors.orange,
+              size: 16,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                hasToken
+                    ? 'Admin Panel unlocked'
+                    : 'Admin Panel locked — enter token to enable',
+                style: TextStyle(
+                  color: hasToken ? Colors.white70 : Colors.orange,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _ctrl,
+                obscureText: _obscure,
+                style: const TextStyle(color: Colors.white, fontSize: 13,
+                    fontFamily: 'monospace'),
+                decoration: InputDecoration(
+                  hintText: 'Management API Bearer token',
+                  hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+                  filled: true,
+                  fillColor: const Color(0xFF060E18),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Colors.white12),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Colors.white12),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 10),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscure ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.white38, size: 16,
+                    ),
+                    onPressed: () => setState(() => _obscure = !_obscure),
+                  ),
+                ),
+                onChanged: (_) => setState(() => _saved = null),
+              ),
+            ),
+            const SizedBox(width: 10),
+            ElevatedButton(
+              onPressed: _saving ? null : _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF7C3AED),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              child: _saving
+                  ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2,
+                          color: Colors.white))
+                  : Text(_saved ?? 'Save',
+                      style: const TextStyle(fontSize: 13,
+                          fontWeight: FontWeight.w600)),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          const Text(
+            'Find it in vms-cloud → Settings → MANAGEMENT_TOKEN.\n'
+            'This token has nothing to do with lottery.',
+            style: TextStyle(color: Colors.white24, fontSize: 11, height: 1.5),
+          ),
+          if (_ctrl.text.trim().isNotEmpty) ...[
+            const SizedBox(height: 6),
+            TextButton(
+              onPressed: () {
+                _ctrl.clear();
+                _save();
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.redAccent,
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(0, 28),
+              ),
+              child: const Text('Lock Admin Panel (clear token)',
+                  style: TextStyle(fontSize: 11)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reyeah credentials panel
+// ─────────────────────────────────────────────────────────────────────────────
+
 class _ReyeahCredentialsPanel extends StatefulWidget {
   final VoidCallback onSaved;
   const _ReyeahCredentialsPanel({required this.onSaved});

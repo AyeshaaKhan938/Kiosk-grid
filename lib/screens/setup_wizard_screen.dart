@@ -32,14 +32,14 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
   // Modo de backend — por defecto vms-cloud para pruebas
   String _backendMode  = 'vmscloud';
   // vms-cloud — valores de prueba precargados (remover antes de producción)
-  String _apiBaseUrl   = 'https://vms-cloud.test/api/v1';
-  String _token        = '01knvsyjyjadzxrs4ma4k2mabq';
-  String _machineNo    = '866903255700003';
-  // Reyeah Cloud
-  String _vmBaseUrl    = '';
-  String _vmAppId      = '';
-  String _vmAppSecret  = '';
-  String _vmMachineNo  = '';
+  String _apiBaseUrl       = 'https://vms-cloud.test/api/v1';
+  String _managementToken  = '01knvsyjyjadzxrs4ma4k2mabq';
+  String _machineNo        = '866903255700003';
+  // Reyeah Cloud (test credentials from API doc 2026-04-30)
+  String _vmBaseUrl    = 'https://api-testwm.reyeah.com';
+  String _vmAppId      = '86ebb48b-33b3-499c-b6eb-08354a998e58';
+  String _vmAppSecret  = '4322BF2FE80649476708DD59DE8B0B7F';
+  String _vmMachineNo  = '866902296600001';
   // Común
   String _adminPin     = '';
 
@@ -47,10 +47,10 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
   void initState() {
     super.initState();
     if (widget.isEditing) {
-      _backendMode   = AppConfig.backendMode;
-      _apiBaseUrl    = AppConfig.apiBaseUrl;
-      _token         = AppConfig.lotteryToken;
-      _machineNo     = AppConfig.machineNo;
+      _backendMode      = AppConfig.backendMode;
+      _apiBaseUrl       = AppConfig.apiBaseUrl;
+      _managementToken  = AppConfig.managementToken;
+      _machineNo        = AppConfig.machineNo;
       _vmBaseUrl     = AppConfig.vmBaseUrl;
       _vmAppId       = AppConfig.vmAppId;
       _vmAppSecret   = AppConfig.vmAppSecret;
@@ -99,19 +99,19 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       );
       // Guardar config base (marca como configurado; PIN; otros campos vacíos/previos)
       await AppConfig.save(
-        apiBaseUrl:   AppConfig.apiBaseUrl,
-        machineNo:    _vmMachineNo, // usar mismo machineNo de Reyeah como fallback
-        lotteryToken: AppConfig.lotteryToken,
-        adminPin:     _adminPin,
-        language:     'en',
+        apiBaseUrl:      AppConfig.apiBaseUrl,
+        machineNo:       _vmMachineNo,
+        managementToken: AppConfig.managementToken,
+        adminPin:        _adminPin,
+        language:        'en',
       );
     } else {
       await AppConfig.save(
-        apiBaseUrl:   _apiBaseUrl,
-        machineNo:    _machineNo,
-        lotteryToken: _token,
-        adminPin:     _adminPin,
-        language:     'en',
+        apiBaseUrl:      _apiBaseUrl,
+        machineNo:       _machineNo,
+        managementToken: _managementToken,
+        adminPin:        _adminPin,
+        language:        'en',
       );
     }
 
@@ -159,22 +159,22 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                       onNext: _next,
                     ),
                     _StepBackend(
-                      initialMode:       _backendMode,
-                      initialUrl:        _apiBaseUrl,
-                      initialToken:      _token,
-                      initialVmBaseUrl:  _vmBaseUrl,
-                      initialVmAppId:    _vmAppId,
-                      initialVmAppSecret: _vmAppSecret,
-                      initialVmMachineNo: _vmMachineNo,
+                      initialMode:             _backendMode,
+                      initialUrl:              _apiBaseUrl,
+                      initialManagementToken:  _managementToken,
+                      initialVmBaseUrl:        _vmBaseUrl,
+                      initialVmAppId:          _vmAppId,
+                      initialVmAppSecret:      _vmAppSecret,
+                      initialVmMachineNo:      _vmMachineNo,
                       onNext: (config) {
                         setState(() {
-                          _backendMode  = config.backendMode;
-                          _apiBaseUrl   = config.apiBaseUrl;
-                          _token        = config.lotteryToken;
-                          _vmBaseUrl    = config.vmBaseUrl;
-                          _vmAppId      = config.vmAppId;
-                          _vmAppSecret  = config.vmAppSecret;
-                          _vmMachineNo  = config.vmMachineNo;
+                          _backendMode      = config.backendMode;
+                          _apiBaseUrl       = config.apiBaseUrl;
+                          _managementToken  = config.managementToken;
+                          _vmBaseUrl        = config.vmBaseUrl;
+                          _vmAppId          = config.vmAppId;
+                          _vmAppSecret      = config.vmAppSecret;
+                          _vmMachineNo      = config.vmMachineNo;
                         });
                         _next();
                       },
@@ -467,7 +467,7 @@ class _StepNetworkState extends State<_StepNetwork> {
 class _BackendConfig {
   final String backendMode;
   final String apiBaseUrl;
-  final String lotteryToken;
+  final String managementToken;
   final String vmBaseUrl;
   final String vmAppId;
   final String vmAppSecret;
@@ -476,7 +476,7 @@ class _BackendConfig {
   const _BackendConfig({
     required this.backendMode,
     required this.apiBaseUrl,
-    required this.lotteryToken,
+    required this.managementToken,
     required this.vmBaseUrl,
     required this.vmAppId,
     required this.vmAppSecret,
@@ -487,7 +487,7 @@ class _BackendConfig {
 class _StepBackend extends StatefulWidget {
   final String initialMode;
   final String initialUrl;
-  final String initialToken;
+  final String initialManagementToken;
   final String initialVmBaseUrl;
   final String initialVmAppId;
   final String initialVmAppSecret;
@@ -498,7 +498,7 @@ class _StepBackend extends StatefulWidget {
   const _StepBackend({
     required this.initialMode,
     required this.initialUrl,
-    required this.initialToken,
+    required this.initialManagementToken,
     required this.initialVmBaseUrl,
     required this.initialVmAppId,
     required this.initialVmAppSecret,
@@ -517,7 +517,7 @@ class _StepBackendState extends State<_StepBackend> {
 
   // ── vms-cloud ─────────────────────────────────────────────────────────────
   late final TextEditingController _urlCtrl;
-  late final TextEditingController _tokenCtrl;
+  late final TextEditingController _mgmtTokenCtrl;
   bool    _testingUrl   = false;
   bool    _testingToken = false;
   String? _urlStatus;
@@ -537,7 +537,7 @@ class _StepBackendState extends State<_StepBackend> {
     super.initState();
     _mode           = widget.initialMode.isEmpty ? 'reyeah' : widget.initialMode;
     _urlCtrl        = TextEditingController(text: widget.initialUrl);
-    _tokenCtrl      = TextEditingController(text: widget.initialToken);
+    _mgmtTokenCtrl  = TextEditingController(text: widget.initialManagementToken);
     _vmBaseUrlCtrl  = TextEditingController(
         text: widget.initialVmBaseUrl.isNotEmpty
             ? widget.initialVmBaseUrl
@@ -550,7 +550,7 @@ class _StepBackendState extends State<_StepBackend> {
   @override
   void dispose() {
     _urlCtrl.dispose();
-    _tokenCtrl.dispose();
+    _mgmtTokenCtrl.dispose();
     _vmBaseUrlCtrl.dispose();
     _vmAppIdCtrl.dispose();
     _vmAppSecretCtrl.dispose();
@@ -568,9 +568,9 @@ class _StepBackendState extends State<_StepBackend> {
   }
 
   Future<void> _testToken() async {
-    if (_tokenCtrl.text.trim().isEmpty) return;
+    if (_mgmtTokenCtrl.text.trim().isEmpty) return;
     setState(() { _testingToken = true; _tokenStatus = null; });
-    final err = await AppConfig.testLotteryToken(_urlCtrl.text, _tokenCtrl.text);
+    final err = await AppConfig.testLotteryToken(_urlCtrl.text, _mgmtTokenCtrl.text);
     if (mounted) setState(() { _testingToken = false; _tokenStatus = err ?? ''; });
   }
 
@@ -607,17 +607,19 @@ class _StepBackendState extends State<_StepBackend> {
              _vmAppSecretCtrl.text.trim().isNotEmpty &&
              _vmMachineNoCtrl.text.trim().isNotEmpty;
     }
-    return _urlStatus == '' && _tokenStatus == '';
+    // Solo se requiere URL verificada. El token es opcional — se puede
+    // configurar en cualquier momento desde el Admin Panel.
+    return _urlStatus == '';
   }
 
   _BackendConfig get _config => _BackendConfig(
-    backendMode:  _mode,
-    apiBaseUrl:   _urlCtrl.text.trim(),
-    lotteryToken: _tokenCtrl.text.trim(),
-    vmBaseUrl:    _vmBaseUrlCtrl.text.trim(),
-    vmAppId:      _vmAppIdCtrl.text.trim(),
-    vmAppSecret:  _vmAppSecretCtrl.text.trim(),
-    vmMachineNo:  _vmMachineNoCtrl.text.trim(),
+    backendMode:     _mode,
+    apiBaseUrl:      _urlCtrl.text.trim(),
+    managementToken: _mgmtTokenCtrl.text.trim(),
+    vmBaseUrl:       _vmBaseUrlCtrl.text.trim(),
+    vmAppId:         _vmAppIdCtrl.text.trim(),
+    vmAppSecret:     _vmAppSecretCtrl.text.trim(),
+    vmMachineNo:     _vmMachineNoCtrl.text.trim(),
   );
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -778,19 +780,40 @@ class _StepBackendState extends State<_StepBackend> {
               : _urlStatus!),
         ],
         const SizedBox(height: 24),
+        // ── Management API Token (OPTIONAL) ───────────────────────────
+        Row(children: [
+          const Text('MANAGEMENT API TOKEN',
+              style: TextStyle(color: Colors.white38, fontSize: 11,
+                  fontWeight: FontWeight.w700, letterSpacing: 1)),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.orange.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+            ),
+            child: const Text('Optional',
+                style: TextStyle(color: Colors.orange,
+                    fontSize: 9, fontWeight: FontWeight.w700)),
+          ),
+        ]),
+        const SizedBox(height: 8),
         _WizardField(
-          controller: _tokenCtrl,
-          label: 'Lottery Token',
-          hint: 'From Lotteries section in your cPanel',
-          icon: Icons.confirmation_number_outlined,
+          controller: _mgmtTokenCtrl,
+          label: '',
+          hint: 'Bearer token for Admin Panel — skip to configure later',
+          icon: Icons.admin_panel_settings_outlined,
           enabled: _urlStatus == '',
           onChanged: (_) => setState(() => _tokenStatus = null),
-          suffix: _TestButton(
-            testing: _testingToken,
-            status: _tokenStatus,
-            label: 'Verify',
-            onTap: _urlStatus == '' ? _testToken : null,
-          ),
+          suffix: _mgmtTokenCtrl.text.trim().isNotEmpty
+              ? _TestButton(
+                  testing: _testingToken,
+                  status: _tokenStatus,
+                  label: 'Verify',
+                  onTap: _urlStatus == '' ? _testToken : null,
+                )
+              : null,
         ),
         if (_tokenStatus != null) ...[
           const SizedBox(height: 6),
@@ -798,9 +821,9 @@ class _StepBackendState extends State<_StepBackend> {
               ? 'Token valid ✓'
               : _tokenStatus!),
         ],
-        const SizedBox(height: 20),
+        const SizedBox(height: 10),
         const Text(
-          'Find the Lottery Token in your vms-cloud cPanel under\nProducts → Lotteries → Draw Token.',
+          'Leave blank to skip — set it later from Admin Settings\nto unlock the Admin Panel (dashboard, inventory, orders).',
           style: TextStyle(color: Colors.white24, fontSize: 12, height: 1.6),
         ),
       ],

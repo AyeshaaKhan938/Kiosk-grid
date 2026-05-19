@@ -172,7 +172,7 @@ class _IdleScreenState extends State<IdleScreen>
     final slideCount = useDemo ? _demoSlides.length : _backendAds.length;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Semantics(
         label: 'VMFS USA vending machine kiosk. Touch anywhere to browse products.',
         button: true,
