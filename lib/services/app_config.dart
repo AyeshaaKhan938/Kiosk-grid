@@ -41,34 +41,75 @@ class AppConfig {
 
   static SharedPreferences? _prefs;
 
+  // ── Production fallbacks (baked into the APK) ─────────────────────────────
+  // These values win when the .env entry is missing AND when the operator
+  // never touched the field in the kiosk admin. They are the canonical values
+  // for the deployed VMFS USA kiosk — the client doesn't need to enter them
+  // manually after a fresh install or remote update.
+  static const _prodApiBaseUrl     = 'https://cloud.vmfsusa.com/api/v1';
+  static const _prodManagementToken =
+      '5f938c58301641d61e730475999acb5204e92ea6d151a176c8b523c72ed7f8be';
+  static const _prodMachineNo      = '866903255700003';
+
+  // Legacy values that older installs had saved to prefs. When we detect one
+  // of these stored, we IGNORE it and use the production fallback. This
+  // handles the case where an over-the-air update can't ask the customer to
+  // re-type the new values.
+  static const _legacyApiBaseUrls = <String>{
+    'http://vms-cloud.test/api/v1',
+    'https://vms-cloud.test/api/v1',
+    'http://localhost/api/v1',
+    'http://10.0.2.2/api/v1',
+  };
+  static const _legacyManagementTokens = <String>{
+    // The buggy migration copied the lottery_token into management_token on
+    // older installs. The known-bad value is locked out here so the .env /
+    // hardcoded prod token wins on the next launch.
+    '01knvsyjyjadzxrs4ma4k2mabq',
+  };
+
   static Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
     await _migrate();
   }
 
-  /// Migración de datos: si la app tenía un lotteryToken guardado con la clave
-  /// vieja y managementToken está vacío, promovemos ese valor como managementToken.
-  /// Esto garantiza que instalaciones previas no pierdan el token al actualizar.
+  /// One-shot cleanup for known-bad values that older builds wrote to prefs.
+  /// Once removed, the getters below fall through to the production fallback.
   static Future<void> _migrate() async {
     final p = _prefs!;
-    final hasNewKey = p.getString(_kManagementToken)?.isNotEmpty == true;
-    if (!hasNewKey) {
-      final oldToken = p.getString(_kLotteryToken) ?? '';
-      if (oldToken.isNotEmpty) {
-        await p.setString(_kManagementToken, oldToken);
-      }
+
+    // Wipe legacy API URLs (test/Laragon paths) so production wins.
+    final storedApi = p.getString(_kApiBaseUrl);
+    if (storedApi != null && _legacyApiBaseUrls.contains(storedApi)) {
+      await p.remove(_kApiBaseUrl);
+    }
+
+    // Wipe the wrong management token that the previous buggy migration wrote.
+    final storedMgmt = p.getString(_kManagementToken);
+    if (storedMgmt != null && _legacyManagementTokens.contains(storedMgmt)) {
+      await p.remove(_kManagementToken);
     }
   }
 
   // ── Getters ──────────────────────────────────────────────────────────────
 
-  static String get apiBaseUrl =>
-      _prefs?.getString(_kApiBaseUrl) ??
-      dotenv.env['API_BASE_URL'] ?? '';
+  static String get apiBaseUrl {
+    final stored = _prefs?.getString(_kApiBaseUrl);
+    if (stored != null && stored.isNotEmpty && !_legacyApiBaseUrls.contains(stored)) {
+      return stored;
+    }
+    final envVal = dotenv.env['API_BASE_URL'];
+    if (envVal != null && envVal.isNotEmpty) return envVal;
+    return _prodApiBaseUrl;
+  }
 
-  static String get machineNo =>
-      _prefs?.getString(_kMachineNo) ??
-      dotenv.env['MACHINE_NO'] ?? '';
+  static String get machineNo {
+    final stored = _prefs?.getString(_kMachineNo);
+    if (stored != null && stored.isNotEmpty) return stored;
+    final envVal = dotenv.env['MACHINE_NO'];
+    if (envVal != null && envVal.isNotEmpty) return envVal;
+    return _prodMachineNo;
+  }
 
   static String get lotteryToken {
     final stored = _prefs?.getString(_kLotteryToken);
@@ -79,13 +120,19 @@ class AppConfig {
   /// Bearer token de gestión → habilita el Admin Panel (dashboard, inventario, órdenes).
   /// Completamente independiente del lottery draw token.
   ///
-  /// Falls through to .env when SharedPreferences holds an empty string —
-  /// the Setup Wizard otherwise saves "" and shadows the bundled default,
-  /// breaking the Admin Panel until the operator manually re-enters the token.
+  /// Priority:
+  ///   1. SharedPreferences (unless it's a known-legacy/bad value)
+  ///   2. .env bundled with the APK
+  ///   3. Hardcoded production fallback (so OTA updates always have the right
+  ///      token even if the client never touched the admin panel).
   static String get managementToken {
     final stored = _prefs?.getString(_kManagementToken);
-    if (stored != null && stored.isNotEmpty) return stored;
-    return dotenv.env['MANAGEMENT_TOKEN'] ?? '';
+    if (stored != null && stored.isNotEmpty && !_legacyManagementTokens.contains(stored)) {
+      return stored;
+    }
+    final envVal = dotenv.env['MANAGEMENT_TOKEN'];
+    if (envVal != null && envVal.isNotEmpty) return envVal;
+    return _prodManagementToken;
   }
 
   static String get adminPin =>

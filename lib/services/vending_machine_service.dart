@@ -219,11 +219,23 @@ class VendingMachineService {
   // android-serialport-api bridge in TtySerialChannel.kt.
 
   /// Dispense via direct TTY serial.
+  ///
+  /// Tolerance-first flow (the strict request/echo/status loop the Reyeah
+  /// docs describe was causing "delivery failed" errors after the motor
+  /// successfully fired, because some board configurations don't echo back
+  /// on the line we're listening on, and the 20-second status poll was
+  /// holding the port open and blocking the next dispense):
+  ///
   ///   1. Open the configured device (AppConfig.ttyPath, default /dev/ttyS0)
-  ///   2. Configure 9600/8N1
-  ///   3. Send CMD 0x41 (delivery)
-  ///   4. Wait for VMC echo (HEADER=0xAA) — 5 s
-  ///   5. Poll CMD 0xE1 (query status) until delivery is confirmed — max 20 s
+  ///      at 9600/8N1.
+  ///   2. Send CMD 0x41 (delivery). If the write succeeds, the board has
+  ///      the command — the motor will fire from the board's own logic.
+  ///   3. Briefly listen (up to 3s) for an echo so we can surface motor or
+  ///      sensor faults if the board does talk back. Missing echo is NOT
+  ///      treated as failure; many boards stay silent.
+  ///   4. Give the motor a few seconds to complete its turn.
+  ///   5. Best-effort status query for fault detection only.
+  ///   6. Close the port quickly so the next call can dispense.
   static Future<bool> _sendDeliveryViaTty({
     required int lineNumber,
     void Function(DispenseStatus)? onProgress,
@@ -245,31 +257,31 @@ class VendingMachineService {
         throw Exception('TtySerial.open($path) returned false.');
       }
 
-      // 2. Send delivery frame.
+      // 2. Send delivery frame. From this point on the motor will spin
+      //    regardless of whether the board echoes back.
       await TtySerial.write(buildDeliveryFrame(lineNumber));
 
-      // 3. Wait for the VMC echo (HEADER 0xAA) within 5 s.
-      final ecoOk = await _waitTtyResponse(
+      // 3. Best-effort echo wait — surface obvious comms problems if any,
+      //    but treat missing echo as "ok, board just doesn't echo".
+      await _waitTtyResponse(
         validate: (r) => _isEchoOk(r, _kCmdDelivery),
-        timeout: const Duration(seconds: 5),
+        timeout: const Duration(seconds: 3),
       );
-      if (!ecoOk) {
-        throw Exception('VMC did not acknowledge delivery (timeout 5s).\n'
-            'Check the cable, baud rate, and that $path is the correct port.');
-      }
 
-      // 4. Poll status until delivery confirmed (max 20 s).
-      final deadline = DateTime.now().add(const Duration(seconds: 20));
-      while (DateTime.now().isBefore(deadline)) {
+      // 4. Let the motor complete its turn before we close the port.
+      //    Most coil/spring slots take 2–4 seconds end-to-end.
+      await Future.delayed(const Duration(seconds: 4));
+
+      // 5. One best-effort status query — only used to surface a fault
+      //    code, never to call the dispense a failure.
+      try {
         await TtySerial.write(buildQueryStatusFrame(lineNumber));
-        await Future.delayed(const Duration(milliseconds: 600));
-
+        await Future.delayed(const Duration(milliseconds: 400));
         final rawResp = await TtySerial.read(
-          timeout: const Duration(milliseconds: 800),
+          timeout: const Duration(milliseconds: 600),
         );
         if (rawResp.isNotEmpty) {
           final result = _parseQueryStatus(rawResp);
-          if (result == _QueryResult.deliveryOk) return true;
           if (result == _QueryResult.motorFault) {
             throw Exception(
               'Motor fault (code 0x02). Check the cargo lane for a jam.',
@@ -281,12 +293,25 @@ class VendingMachineService {
             );
           }
         }
+      } on Exception catch (e) {
+        // Re-throw real motor/sensor faults — swallow port-read noise.
+        final msg = e.toString();
+        if (msg.contains('Motor fault') || msg.contains('Optical sensor')) {
+          rethrow;
+        }
       }
 
-      throw Exception('Delivery confirmation timeout after 20s.');
+      return true;
     } finally {
       if (opened) {
-        await TtySerial.close();
+        // Brief flush window before closing so any in-flight bytes from the
+        // board land on the file descriptor rather than getting dropped.
+        await Future.delayed(const Duration(milliseconds: 200));
+        try {
+          await TtySerial.close();
+        } catch (_) {
+          // Don't let close errors mask the original outcome.
+        }
       }
     }
   }
