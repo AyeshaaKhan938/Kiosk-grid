@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:usb_serial/usb_serial.dart';
 import 'app_config.dart';
@@ -174,6 +175,15 @@ class VendingMachineService {
   /// Returns a [DispenseResult] — `success` means the motor confirmed delivery,
   /// `error` means the VMC reported a fault or did not respond.
   static Future<DispenseResult> testDispenseSlot(int lineNumber) async {
+    if (kIsWeb) {
+      return const DispenseResult(
+        status: DispenseStatus.error,
+        errorMessage:
+            'USB serial only works on Android. Install the APK on the tablet '
+            'and run this test there.',
+      );
+    }
+
     try {
       final ok = await _sendDeliveryViaUsb(
         lineNumber: lineNumber,
@@ -182,6 +192,13 @@ class VendingMachineService {
       return DispenseResult(
         status: ok ? DispenseStatus.success : DispenseStatus.error,
         errorMessage: ok ? null : 'VMC did not confirm delivery.',
+      );
+    } on MissingPluginException {
+      return const DispenseResult(
+        status: DispenseStatus.error,
+        errorMessage:
+            'USB serial plugin not available on this platform. Test from the '
+            'physical Android tablet, not Chrome.',
       );
     } catch (e) {
       return DispenseResult(

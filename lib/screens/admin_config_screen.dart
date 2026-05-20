@@ -156,6 +156,16 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           ),
           const SizedBox(height: 12),
 
+          // ── List USB Devices (debug — identify the connected USB chip) ──
+          _buildAction(
+            icon: Icons.device_hub_rounded,
+            label: 'List USB Devices',
+            subtitle: 'Show every USB device attached, with vendor/product IDs. Use this when "not a serial device" errors appear.',
+            color: const Color(0xFF9C27B0),
+            onTap: _listUsbDevices,
+          ),
+          const SizedBox(height: 12),
+
           // ── Exit Kiosk Mode (unlock device for maintenance) ────────────
           _buildAction(
             icon: Icons.lock_open_rounded,
@@ -554,6 +564,118 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                   ),
                 ),
               ],
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close',
+                style: TextStyle(color: Color(0xFF007ACC))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── List USB Devices (debug) ──────────────────────────────────────────────
+
+  Future<void> _listUsbDevices() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1A2B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.device_hub_rounded, color: Color(0xFF9C27B0)),
+            SizedBox(width: 10),
+            Text('USB Devices',
+                style: TextStyle(color: Colors.white, fontSize: 17)),
+          ],
+        ),
+        content: FutureBuilder<List<UsbDevice>>(
+          future: UsbSerial.listDevices(),
+          builder: (_, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const SizedBox(
+                width: 280,
+                child: Row(children: [
+                  CircularProgressIndicator(
+                      color: Color(0xFF9C27B0), strokeWidth: 2),
+                  SizedBox(width: 16),
+                  Text('Scanning…',
+                      style: TextStyle(color: Colors.white54)),
+                ]),
+              );
+            }
+
+            if (snap.hasError) {
+              return SizedBox(
+                width: 320,
+                child: Text('Error: ${snap.error}',
+                    style: const TextStyle(
+                        color: Colors.redAccent, fontSize: 12)),
+              );
+            }
+
+            final devices = snap.data ?? const <UsbDevice>[];
+            if (devices.isEmpty) {
+              return const SizedBox(
+                width: 320,
+                child: Text(
+                  'No USB devices detected.\n\nCheck the cable between the '
+                  'tablet and the Reyeah board. The tablet must support USB '
+                  'OTG host mode and be properly powered.',
+                  style: TextStyle(color: Colors.redAccent, fontSize: 12),
+                ),
+              );
+            }
+
+            return SizedBox(
+              width: 360,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Found ${devices.length} device(s):',
+                        style: const TextStyle(
+                            color: Colors.greenAccent, fontSize: 13)),
+                    const SizedBox(height: 12),
+                    for (final d in devices) ...[
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF060E18),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color: const Color(0xFF9C27B0)
+                                  .withValues(alpha: 0.3)),
+                        ),
+                        child: SelectableText(
+                          [
+                            'Device: ${d.deviceName}',
+                            'Product:  ${d.productName ?? "—"}',
+                            'Maker:    ${d.manufacturerName ?? "—"}',
+                            'Serial:   ${d.serial ?? "—"}',
+                            'VID:      0x${(d.vid ?? 0).toRadixString(16).toUpperCase().padLeft(4, "0")}  (${d.vid})',
+                            'PID:      0x${(d.pid ?? 0).toRadixString(16).toUpperCase().padLeft(4, "0")}  (${d.pid})',
+                            'DeviceId: ${d.deviceId}',
+                          ].join('\n'),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                            fontFamily: 'monospace',
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             );
           },
         ),
