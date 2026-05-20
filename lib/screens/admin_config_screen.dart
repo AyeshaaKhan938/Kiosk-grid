@@ -3,6 +3,7 @@ import 'package:usb_serial/usb_serial.dart';
 import '../services/app_config.dart';
 import '../services/kiosk_lockdown.dart';
 import '../services/reyeah_service.dart';
+import '../services/tty_serial.dart';
 import '../services/vending_machine_service.dart';
 import 'setup_wizard_screen.dart';
 import 'admin/admin_shell_screen.dart';
@@ -163,6 +164,16 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             subtitle: 'Show every USB device attached, with vendor/product IDs. Use this when "not a serial device" errors appear.',
             color: const Color(0xFF9C27B0),
             onTap: _listUsbDevices,
+          ),
+          const SizedBox(height: 12),
+
+          // ── List TTY Devices + pick the one wired to the motor ─────────
+          _buildAction(
+            icon: Icons.cable_rounded,
+            label: 'TTY Serial Port',
+            subtitle: 'Currently: ${AppConfig.ttyPath}. Tap to list available /dev/ttyS* devices and pick the one connected to the Reyeah board.',
+            color: const Color(0xFFFF6F00),
+            onTap: _pickTtyDevice,
           ),
           const SizedBox(height: 12),
 
@@ -686,6 +697,127 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                 style: TextStyle(color: Color(0xFF007ACC))),
           ),
         ],
+      ),
+    );
+  }
+
+  // ── Pick TTY Device (set which /dev/ttyS* is the Reyeah motor port) ──────
+
+  Future<void> _pickTtyDevice() async {
+    final devices = await TtySerial.listDevices();
+
+    if (!mounted) return;
+
+    if (devices.isEmpty) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: const Color(0xFF0D1A2B),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.cable_rounded, color: Color(0xFFFF6F00)),
+              SizedBox(width: 10),
+              Text('TTY Devices',
+                  style: TextStyle(color: Colors.white, fontSize: 17)),
+            ],
+          ),
+          content: const Text(
+            'No /dev/ttyS* or /dev/ttyUSB* devices found.\n\n'
+            'TTY listing only works on the physical Android tablet — '
+            'Chrome/desktop returns an empty list.',
+            style: TextStyle(color: Colors.redAccent, fontSize: 12),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close',
+                  style: TextStyle(color: Color(0xFF007ACC))),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final current = AppConfig.ttyPath;
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1A2B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.cable_rounded, color: Color(0xFFFF6F00)),
+            SizedBox(width: 10),
+            Text('Pick TTY Device',
+                style: TextStyle(color: Colors.white, fontSize: 17)),
+          ],
+        ),
+        content: SizedBox(
+          width: 320,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Select the /dev/ttyS* port wired to the Reyeah Control Board. '
+                'After picking, use "Test Dispense Slot" to confirm the motor fires.',
+                style: TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              const SizedBox(height: 14),
+              for (final path in devices)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  leading: Icon(
+                    path == current
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    color: path == current
+                        ? const Color(0xFFFF6F00)
+                        : Colors.white38,
+                    size: 20,
+                  ),
+                  title: Text(
+                    path,
+                    style: TextStyle(
+                      color: path == current
+                          ? const Color(0xFFFF6F00)
+                          : Colors.white,
+                      fontSize: 13,
+                      fontFamily: 'monospace',
+                      fontWeight: path == current
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                    ),
+                  ),
+                  onTap: () => Navigator.pop(context, path),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('Cancel',
+                style: TextStyle(color: Colors.white38)),
+          ),
+        ],
+      ),
+    );
+
+    if (picked == null || picked == current) return;
+
+    await AppConfig.setTtyPath(picked);
+    if (!mounted) return;
+    setState(() {}); // refresh the displayed subtitle
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('TTY port set to $picked'),
+        backgroundColor: const Color(0xFFFF6F00),
+        duration: const Duration(seconds: 2),
       ),
     );
   }

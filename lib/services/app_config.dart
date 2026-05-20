@@ -33,6 +33,12 @@ class AppConfig {
   static const _kVmAppSecret  = 'cfg_vm_app_secret';
   static const _kVmMachineNo  = 'cfg_vm_machine_no';
 
+  // TTY serial — path of the Reyeah Control Board's UART device on the tablet.
+  // Default /dev/ttyS0 covers most Reyeah T1-02 mainboards; admin can override
+  // via "List TTY Devices" in the admin panel if the board is on a different
+  // port (ttyS1..ttyS10, or ttyUSB5 for USB-to-serial cables).
+  static const _kTtyPath = 'cfg_tty_path';
+
   static SharedPreferences? _prefs;
 
   static Future<void> init() async {
@@ -64,15 +70,23 @@ class AppConfig {
       _prefs?.getString(_kMachineNo) ??
       dotenv.env['MACHINE_NO'] ?? '';
 
-  static String get lotteryToken =>
-      _prefs?.getString(_kLotteryToken) ??
-      dotenv.env['LOTTERY_TOKEN'] ?? '';
+  static String get lotteryToken {
+    final stored = _prefs?.getString(_kLotteryToken);
+    if (stored != null && stored.isNotEmpty) return stored;
+    return dotenv.env['LOTTERY_TOKEN'] ?? '';
+  }
 
   /// Bearer token de gestión → habilita el Admin Panel (dashboard, inventario, órdenes).
   /// Completamente independiente del lottery draw token.
-  static String get managementToken =>
-      _prefs?.getString(_kManagementToken) ??
-      dotenv.env['MANAGEMENT_TOKEN'] ?? '';
+  ///
+  /// Falls through to .env when SharedPreferences holds an empty string —
+  /// the Setup Wizard otherwise saves "" and shadows the bundled default,
+  /// breaking the Admin Panel until the operator manually re-enters the token.
+  static String get managementToken {
+    final stored = _prefs?.getString(_kManagementToken);
+    if (stored != null && stored.isNotEmpty) return stored;
+    return dotenv.env['MANAGEMENT_TOKEN'] ?? '';
+  }
 
   static String get adminPin =>
       _prefs?.getString(_kAdminPin) ?? '1234';
@@ -91,6 +105,17 @@ class AppConfig {
 
   static Future<void> setSimulateDispense(bool value) async =>
       _prefs?.setBool(_kSimulateDispense, value);
+
+  /// Path of the /dev/ttyS* device wired to the Reyeah Control Board.
+  /// Defaults to /dev/ttyS0 — the most common port on Reyeah T1-02 boards.
+  static String get ttyPath {
+    final stored = _prefs?.getString(_kTtyPath);
+    if (stored != null && stored.isNotEmpty) return stored;
+    return dotenv.env['TTY_PATH'] ?? '/dev/ttyS0';
+  }
+
+  static Future<void> setTtyPath(String path) async =>
+      _prefs?.setString(_kTtyPath, path.trim());
 
   /// Guarda el lottery draw token (botón de sorteo para clientes).
   static Future<void> setLotteryToken(String token) async =>

@@ -1,10 +1,9 @@
-import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:usb_serial/usb_serial.dart';
 import 'app_config.dart';
+import 'tty_serial.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Control Board Communication API — Guangzhou Reyeah Technology
@@ -134,8 +133,13 @@ class VendingMachineService {
         await Future.delayed(const Duration(milliseconds: 1200));
         physicalSuccess = true;
       } else {
-        // ── Modo real (USB serial) ───────────────────────────────────────
-        physicalSuccess = await _sendDeliveryViaUsb(
+        // ── Modo real (TTY serial — /dev/ttyS* directly via JNI) ─────────
+        //
+        // Confirmed against the factory APK: the Reyeah Control Board on
+        // this hardware is wired to the tablet's UART pins, NOT through a
+        // USB-to-serial bridge. usb_serial enumeration sees nothing because
+        // the device isn't on USB at all.
+        physicalSuccess = await _sendDeliveryViaTty(
           lineNumber: lineNumber,
           onProgress: onProgress,
         );
@@ -179,13 +183,13 @@ class VendingMachineService {
       return const DispenseResult(
         status: DispenseStatus.error,
         errorMessage:
-            'USB serial only works on Android. Install the APK on the tablet '
+            'TTY serial only works on Android. Install the APK on the tablet '
             'and run this test there.',
       );
     }
 
     try {
-      final ok = await _sendDeliveryViaUsb(
+      final ok = await _sendDeliveryViaTty(
         lineNumber: lineNumber,
         onProgress: null,
       );
@@ -197,7 +201,7 @@ class VendingMachineService {
       return const DispenseResult(
         status: DispenseStatus.error,
         errorMessage:
-            'USB serial plugin not available on this platform. Test from the '
+            'TTY serial plugin not available on this platform. Test from the '
             'physical Android tablet, not Chrome.',
       );
     } catch (e) {
@@ -208,69 +212,62 @@ class VendingMachineService {
     }
   }
 
-  // ── Comunicación USB serial real ──────────────────────────────────────────
+  // ── Comunicación TTY serial real (/dev/ttyS* via JNI) ───────────────────
+  //
+  // Confirmed against the factory APK that the Reyeah Control Board is
+  // wired to the tablet's UART pins, not USB. This path uses the
+  // android-serialport-api bridge in TtySerialChannel.kt.
 
-  /// Flujo completo de despacho vía USB serial:
-  ///   1. Conectar al primer dispositivo USB disponible
-  ///   2. Configurar 9600/8N1
-  ///   3. Enviar CMD 0x41 (delivery)
-  ///   4. Esperar eco del VMC (HEADER=0xAA) — 5 s
-  ///   5. Polling de CMD 0xE1 (query status) hasta confirmar despacho — 20 s
-  static Future<bool> _sendDeliveryViaUsb({
+  /// Dispense via direct TTY serial.
+  ///   1. Open the configured device (AppConfig.ttyPath, default /dev/ttyS0)
+  ///   2. Configure 9600/8N1
+  ///   3. Send CMD 0x41 (delivery)
+  ///   4. Wait for VMC echo (HEADER=0xAA) — 5 s
+  ///   5. Poll CMD 0xE1 (query status) until delivery is confirmed — max 20 s
+  static Future<bool> _sendDeliveryViaTty({
     required int lineNumber,
     void Function(DispenseStatus)? onProgress,
   }) async {
-    UsbPort? port;
+    final path = AppConfig.ttyPath;
 
+    bool opened = false;
     try {
-      // 1. Listar dispositivos USB serial disponibles
-      final devices = await UsbSerial.listDevices();
-      if (devices.isEmpty) {
+      // 1. Open the port.
+      try {
+        opened = await TtySerial.open(path, baud: 9600);
+      } on TtySerialException catch (e) {
         throw Exception(
-          'No USB serial device found.\n'
-          'Check the cable between the tablet and the Control Board.',
+          'Could not open $path: ${e.message}\n'
+          'Use "List TTY Devices" in admin and confirm the path is correct.',
         );
       }
+      if (!opened) {
+        throw Exception('TtySerial.open($path) returned false.');
+      }
 
-      // 2. Abrir el primer dispositivo
-      final device = devices.first;
-      port = await device.create();
-      if (port == null) throw Exception('Could not create USB port.');
-      final opened = await port.open();
-      if (!opened) throw Exception('Could not open USB port.');
+      // 2. Send delivery frame.
+      await TtySerial.write(buildDeliveryFrame(lineNumber));
 
-      // 3. UART: 9600 bps / 8N1 / sin paridad / sin flow control
-      await port.setPortParameters(
-        9600,
-        UsbPort.DATABITS_8,
-        UsbPort.STOPBITS_1,
-        UsbPort.PARITY_NONE,
-      );
-
-      // 4. Enviar trama de despacho
-      final deliveryFrame = buildDeliveryFrame(lineNumber);
-      await port.write(deliveryFrame);
-
-      // 5. Esperar eco del VMC — timeout 5 s
-      final ecoOk = await _waitForResponse(
-        port: port,
+      // 3. Wait for the VMC echo (HEADER 0xAA) within 5 s.
+      final ecoOk = await _waitTtyResponse(
         validate: (r) => _isEchoOk(r, _kCmdDelivery),
         timeout: const Duration(seconds: 5),
       );
       if (!ecoOk) {
         throw Exception('VMC did not acknowledge delivery (timeout 5s).\n'
-            'Check serial connection and baud rate.');
+            'Check the cable, baud rate, and that $path is the correct port.');
       }
 
-      // 6. Polling de status hasta confirmar despacho — max 20 s
+      // 4. Poll status until delivery confirmed (max 20 s).
       final deadline = DateTime.now().add(const Duration(seconds: 20));
       while (DateTime.now().isBefore(deadline)) {
-        await port.write(buildQueryStatusFrame(lineNumber));
+        await TtySerial.write(buildQueryStatusFrame(lineNumber));
         await Future.delayed(const Duration(milliseconds: 600));
 
-        final rawResp = await _readRaw(port,
-            timeout: const Duration(milliseconds: 800));
-        if (rawResp != null) {
+        final rawResp = await TtySerial.read(
+          timeout: const Duration(milliseconds: 800),
+        );
+        if (rawResp.isNotEmpty) {
           final result = _parseQueryStatus(rawResp);
           if (result == _QueryResult.deliveryOk) return true;
           if (result == _QueryResult.motorFault) {
@@ -288,63 +285,30 @@ class VendingMachineService {
 
       throw Exception('Delivery confirmation timeout after 20s.');
     } finally {
-      await port?.close();
+      if (opened) {
+        await TtySerial.close();
+      }
     }
   }
 
-  // ── Helpers de I/O serial ─────────────────────────────────────────────────
-
-  static Future<bool> _waitForResponse({
-    required UsbPort port,
+  /// Read+validate loop for the TTY path. Reads chunks until either a frame
+  /// passes [validate] or [timeout] elapses.
+  static Future<bool> _waitTtyResponse({
     required bool Function(Uint8List) validate,
     required Duration timeout,
   }) async {
-    final completer = Completer<bool>();
-    StreamSubscription<Uint8List>? sub;
-    Timer? timer;
-
-    timer = Timer(timeout, () {
-      sub?.cancel();
-      if (!completer.isCompleted) completer.complete(false);
-    });
-
-    sub = port.inputStream?.listen((data) {
-      if (validate(data)) {
-        timer?.cancel();
-        sub?.cancel();
-        if (!completer.isCompleted) completer.complete(true);
-      }
-    }, onError: (_) {
-      timer?.cancel();
-      sub?.cancel();
-      if (!completer.isCompleted) completer.complete(false);
-    });
-
-    return completer.future;
-  }
-
-  static Future<Uint8List?> _readRaw(UsbPort port,
-      {required Duration timeout}) async {
-    final completer = Completer<Uint8List?>();
-    StreamSubscription<Uint8List>? sub;
-    Timer? timer;
-
-    timer = Timer(timeout, () {
-      sub?.cancel();
-      if (!completer.isCompleted) completer.complete(null);
-    });
-
-    sub = port.inputStream?.listen((data) {
-      timer?.cancel();
-      sub?.cancel();
-      if (!completer.isCompleted) completer.complete(data);
-    }, onError: (_) {
-      timer?.cancel();
-      sub?.cancel();
-      if (!completer.isCompleted) completer.complete(null);
-    });
-
-    return completer.future;
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining.isNegative) break;
+      final chunk = await TtySerial.read(
+        timeout: remaining > const Duration(milliseconds: 500)
+            ? const Duration(milliseconds: 500)
+            : remaining,
+      );
+      if (chunk.isNotEmpty && validate(chunk)) return true;
+    }
+    return false;
   }
 
   // ── Reporte al backend Laravel ────────────────────────────────────────────

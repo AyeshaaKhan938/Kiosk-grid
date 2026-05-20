@@ -19,6 +19,9 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
+        // /dev/ttyS* serial bridge — talks to the Reyeah Control Board directly.
+        TtySerialChannel(flutterEngine)
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, kioskChannel)
             .setMethodCallHandler { call, result ->
                 when (call.method) {

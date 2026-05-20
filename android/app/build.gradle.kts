@@ -39,3 +39,12 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Direct TTY serial access — opens /dev/ttyS* via JNI for talking to the
+    // Reyeah Control Board. This is what the factory app uses (confirmed by
+    // decompiling). The usb_serial plugin we kept for backward compatibility
+    // doesn't see this board because it's wired to the tablet's UART pins,
+    // not through a USB-to-serial bridge.
+    implementation("com.github.licheedev:Android-SerialPort-API:2.1.1")
+}

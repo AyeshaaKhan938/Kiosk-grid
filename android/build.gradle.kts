@@ -2,6 +2,9 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // JitPack — hosts the android-serialport-api library used to talk to
+        // /dev/ttyS* on the Reyeah vending machine motherboard.
+        maven { url = uri("https://jitpack.io") }
     }
 }
 
