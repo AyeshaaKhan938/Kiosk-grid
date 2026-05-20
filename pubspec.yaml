@@ -1,7 +1,7 @@
 name: vmfs_lottery
 description: VMFS USA - Vending Machine Lottery System
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -31,6 +31,12 @@ dependencies:
   # Comunicación USB serial con el Control Board de la vending machine
   # Protocolo UART 9600bps / 8N1 (Reyeah VMC Communication API)
   usb_serial: ^0.5.1
+
+  # Read the kiosk's own APK version (for remote update checks)
+  package_info_plus: ^8.0.0
+
+  # Save downloaded APK to a temp directory before triggering install
+  path_provider: ^2.1.0
 
 dev_dependencies:
   flutter_test:

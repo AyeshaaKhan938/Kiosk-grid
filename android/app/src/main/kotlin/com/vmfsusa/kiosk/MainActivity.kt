@@ -38,6 +38,9 @@ class MainActivity : FlutterActivity() {
         // /dev/ttyS* serial bridge — talks to the Reyeah Control Board directly.
         TtySerialChannel(flutterEngine)
 
+        // Remote APK self-update — installs an APK downloaded from vms-cloud.
+        ApkInstallerChannel(applicationContext, flutterEngine)
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, kioskChannel)
             .setMethodCallHandler { call, result ->
                 when (call.method) {

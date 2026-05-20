@@ -4,6 +4,7 @@ import '../services/app_config.dart';
 import '../services/kiosk_lockdown.dart';
 import '../services/reyeah_service.dart';
 import '../services/tty_serial.dart';
+import '../services/update_service.dart';
 import '../services/vending_machine_service.dart';
 import 'setup_wizard_screen.dart';
 import 'admin/admin_shell_screen.dart';
@@ -174,6 +175,16 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             subtitle: 'Currently: ${AppConfig.ttyPath}. Tap to list available /dev/ttyS* devices and pick the one connected to the Reyeah board.',
             color: const Color(0xFFFF6F00),
             onTap: _pickTtyDevice,
+          ),
+          const SizedBox(height: 12),
+
+          // ── Check for Updates (downloads + installs a new APK from vms-cloud)
+          _buildAction(
+            icon: Icons.system_update_rounded,
+            label: 'Check for Updates',
+            subtitle: 'Download and install the latest APK from vms-cloud. Settings + PIN are preserved.',
+            color: const Color(0xFF388E3C),
+            onTap: _checkForUpdates,
           ),
           const SizedBox(height: 12),
 
@@ -977,6 +988,209 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     );
   }
 
+  // ── Remote APK update ────────────────────────────────────────────────────
+
+  Future<void> _checkForUpdates() async {
+    // Show a "checking…" dialog while we poll the backend.
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _CheckingUpdateDialog(),
+    );
+
+    UpdateInfo info;
+    String currentVersion;
+    try {
+      currentVersion = await UpdateService.currentVersionName();
+      info = await UpdateService.check();
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      _showSimpleDialog(
+        title: 'Update check failed',
+        message: 'Could not reach the update server.\n\n$e',
+        color: Colors.redAccent,
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(); // close checking dialog
+
+    if (!info.available) {
+      _showSimpleDialog(
+        title: 'You\'re up to date',
+        message: 'This kiosk is running version $currentVersion.\nNo newer version is available.',
+        color: const Color(0xFF388E3C),
+      );
+      return;
+    }
+
+    // Confirm before downloading.
+    final go = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1A2B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(children: [
+          Icon(Icons.system_update_rounded, color: Color(0xFF388E3C)),
+          SizedBox(width: 10),
+          Text('Update available', style: TextStyle(color: Colors.white, fontSize: 17)),
+        ]),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Current: $currentVersion\nLatest:  ${info.versionName}',
+                style: const TextStyle(color: Colors.white70, fontSize: 13,
+                    fontFamily: 'monospace'),
+              ),
+              if (info.sizeBytes != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Download size: ${(info.sizeBytes! / 1024 / 1024).toStringAsFixed(1)} MB',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+              ],
+              if (info.releaseNotes.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Text('Release notes:',
+                    style: TextStyle(color: Color(0xFF007ACC), fontSize: 11,
+                        fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                const SizedBox(height: 6),
+                Text(info.releaseNotes,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              ],
+              if (info.mandatory) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+                  ),
+                  child: const Text(
+                    'This is a MANDATORY update. The kiosk should not skip it.',
+                    style: TextStyle(color: Colors.orange, fontSize: 12,
+                        fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          if (!info.mandatory)
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Later', style: TextStyle(color: Colors.white38)),
+            ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF388E3C),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Download & install'),
+          ),
+        ],
+      ),
+    );
+
+    if (go != true || !mounted) return;
+
+    // Make sure the user has granted "install unknown apps" permission.
+    final canInstall = await UpdateService.canRequestInstalls();
+    if (!canInstall) {
+      if (!mounted) return;
+      await _showSimpleDialog(
+        title: 'Permission needed',
+        message: 'Android needs your permission to install apps from this source. '
+            'Tap OK to open the settings page, then toggle "Allow from this source" '
+            'and try the update again.',
+        color: const Color(0xFFFF9800),
+      );
+      await UpdateService.openInstallSettings();
+      return;
+    }
+
+    // Download + install.
+    if (!mounted) return;
+    final progressController = ValueNotifier<double>(0);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _DownloadingDialog(progress: progressController),
+    );
+
+    String path;
+    try {
+      path = await UpdateService.download(
+        info,
+        onProgress: (received, total) {
+          progressController.value = total > 0 ? received / total : 0;
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      progressController.dispose();
+      _showSimpleDialog(
+        title: 'Download failed',
+        message: e.toString(),
+        color: Colors.redAccent,
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    progressController.dispose();
+
+    final launched = await UpdateService.installApk(path);
+    if (!mounted) return;
+    if (!launched) {
+      _showSimpleDialog(
+        title: 'Install failed',
+        message: 'Could not launch the system installer. The APK is saved at:\n$path',
+        color: Colors.redAccent,
+      );
+    }
+    // If launched succeeded, Android takes over from here. After the admin
+    // taps "Install" on the system dialog, the kiosk relaunches with the
+    // new version.
+  }
+
+  Future<void> _showSimpleDialog({
+    required String title,
+    required String message,
+    required Color color,
+  }) {
+    return showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1A2B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(title, style: TextStyle(color: color, fontSize: 17)),
+        content: Text(message,
+            style: const TextStyle(color: Colors.white70, fontSize: 13)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK',
+                style: TextStyle(color: Color(0xFF007ACC),
+                    fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Exit Kiosk Mode ──────────────────────────────────────────────────────
 
   Future<void> _confirmExitKioskMode() async {
@@ -1765,5 +1979,88 @@ void _checkPin(
     );
   } else {
     setError('Incorrect PIN');
+  }
+}
+
+// ── Update dialogs ───────────────────────────────────────────────────────────
+
+/// Indeterminate spinner shown while we poll the backend for the latest version.
+class _CheckingUpdateDialog extends StatelessWidget {
+  const _CheckingUpdateDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF0D1A2B),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      content: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 22, height: 22,
+            child: CircularProgressIndicator(
+              color: Color(0xFF388E3C), strokeWidth: 2.5,
+            ),
+          ),
+          SizedBox(width: 16),
+          Text('Checking for updates…',
+              style: TextStyle(color: Colors.white70, fontSize: 14)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Determinate progress bar shown while the APK downloads.
+class _DownloadingDialog extends StatelessWidget {
+  final ValueNotifier<double> progress;
+  const _DownloadingDialog({required this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF0D1A2B),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Row(children: [
+        Icon(Icons.download_rounded, color: Color(0xFF388E3C)),
+        SizedBox(width: 10),
+        Text('Downloading update',
+            style: TextStyle(color: Colors.white, fontSize: 16)),
+      ]),
+      content: SizedBox(
+        width: 320,
+        child: ValueListenableBuilder<double>(
+          valueListenable: progress,
+          builder: (_, value, __) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: LinearProgressIndicator(
+                  value: value > 0 ? value : null,
+                  minHeight: 10,
+                  backgroundColor: const Color(0xFF060E18),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                      Color(0xFF388E3C)),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                value > 0
+                    ? '${(value * 100).toStringAsFixed(0)}% complete'
+                    : 'Starting download…',
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'After download, Android will ask you to confirm the install.',
+                style: TextStyle(color: Colors.white38, fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

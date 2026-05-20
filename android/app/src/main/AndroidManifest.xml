@@ -18,6 +18,10 @@
     <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
     <uses-permission android:name="android.permission.SHOW_WHEN_LOCKED" />
 
+    <!-- Remote APK self-updates: download via HTTP + trigger install intent -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+
     <application
         android:label="VMFS USA"
         android:name="${applicationName}"
@@ -66,6 +70,19 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- FileProvider: required so we can hand a freshly-downloaded APK
+             to the system installer on Android 7+ (file:// URIs are blocked
+             outside the app sandbox starting from API 24). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_provider_paths" />
+        </provider>
 
         <!-- BootReceiver: relanza MainActivity cuando la tablet enciende tras
              corte de luz / reinicio. Sin esto el kiosk se queda en el launcher
