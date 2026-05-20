@@ -146,6 +146,16 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           ),
           const SizedBox(height: 12),
 
+          // ── Test Dispense Slot (fires real motor) ──────────────────────
+          _buildAction(
+            icon: Icons.local_shipping_rounded,
+            label: 'Test Dispense Slot',
+            subtitle: 'Fire a motor to verify hardware. No order created, no Ten Point Media validation.',
+            color: const Color(0xFF4CAF50),
+            onTap: _promptTestDispense,
+          ),
+          const SizedBox(height: 12),
+
           // ── Exit Kiosk Mode (unlock device for maintenance) ────────────
           _buildAction(
             icon: Icons.lock_open_rounded,
@@ -404,6 +414,161 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       ),
     );
   }
+
+  // ── Test Dispense Slot ────────────────────────────────────────────────────
+
+  Future<void> _promptTestDispense() async {
+    final ctrl = TextEditingController();
+
+    final slotNumber = await showDialog<int>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1A2B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.local_shipping_rounded, color: Color(0xFF4CAF50)),
+            SizedBox(width: 10),
+            Text('Test Dispense Slot',
+                style: TextStyle(color: Colors.white, fontSize: 17)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter the slot number (1-99) you want to test. The motor for '
+              'that slot will fire — a product will physically drop.\n\n'
+              'This bypasses Ten Point Media validation and does NOT create '
+              'an order or decrement stock in vms-cloud.',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 22, letterSpacing: 4),
+              decoration: InputDecoration(
+                hintText: 'Slot #',
+                hintStyle: const TextStyle(color: Colors.white24),
+                filled: true,
+                fillColor: const Color(0xFF060E18),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Colors.white12),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                      color: Color(0xFF4CAF50), width: 1.5),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('Cancel',
+                style: TextStyle(color: Colors.white38)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final n = int.tryParse(ctrl.text.trim());
+              if (n == null || n < 1 || n > 99) {
+                Navigator.pop(context, null);
+                return;
+              }
+              Navigator.pop(context, n);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4CAF50),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Fire motor'),
+          ),
+        ],
+      ),
+    );
+
+    if (slotNumber == null || !mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1A2B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.local_shipping_rounded, color: Color(0xFF4CAF50)),
+            const SizedBox(width: 10),
+            Text('Dispensing slot $slotNumber…',
+                style: const TextStyle(color: Colors.white, fontSize: 16)),
+          ],
+        ),
+        content: FutureBuilder<DispenseResult>(
+          future: VendingMachineService.testDispenseSlot(slotNumber),
+          builder: (_, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Row(
+                children: [
+                  CircularProgressIndicator(
+                      color: Color(0xFF4CAF50), strokeWidth: 2),
+                  SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      'Sending UART delivery command. Watch the machine — '
+                      'this can take up to 25 seconds while the motor '
+                      'completes its turn.',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            final result = snap.data;
+            final ok = result?.status == DispenseStatus.success;
+            return Row(
+              children: [
+                Icon(
+                  ok ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                  color: ok ? Colors.greenAccent : Colors.redAccent,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    ok
+                        ? 'Success — slot $slotNumber dispensed.'
+                        : 'Failed: ${result?.errorMessage ?? "Unknown error"}',
+                    style: TextStyle(
+                        color: ok ? Colors.greenAccent : Colors.redAccent,
+                        fontSize: 13),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close',
+                style: TextStyle(color: Color(0xFF007ACC))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── USB Test helper ───────────────────────────────────────────────────────
 
   Future<String> _runUsbTest() async {
     try {

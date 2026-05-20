@@ -165,6 +165,32 @@ class VendingMachineService {
     );
   }
 
+  // ── Admin / hardware test ─────────────────────────────────────────────────
+
+  /// Fires a real UART delivery for [lineNumber] without creating an Order
+  /// or reporting to the backend. Used by the kiosk admin panel to verify
+  /// the Reyeah control board is wired and a specific slot's motor works.
+  ///
+  /// Returns a [DispenseResult] — `success` means the motor confirmed delivery,
+  /// `error` means the VMC reported a fault or did not respond.
+  static Future<DispenseResult> testDispenseSlot(int lineNumber) async {
+    try {
+      final ok = await _sendDeliveryViaUsb(
+        lineNumber: lineNumber,
+        onProgress: null,
+      );
+      return DispenseResult(
+        status: ok ? DispenseStatus.success : DispenseStatus.error,
+        errorMessage: ok ? null : 'VMC did not confirm delivery.',
+      );
+    } catch (e) {
+      return DispenseResult(
+        status: DispenseStatus.error,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
   // ── Comunicación USB serial real ──────────────────────────────────────────
 
   /// Flujo completo de despacho vía USB serial:
