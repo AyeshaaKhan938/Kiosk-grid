@@ -21,10 +21,16 @@ android {
 
     defaultConfig {
         applicationId = "com.vmfsusa.kiosk"
-        minSdk = flutter.minSdkVersion   // API 21+ requerido por usb_serial y Flutter
+        minSdk = flutter.minSdkVersion   // API 21+
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Limit native libs to architectures used by Reyeah vending tablets
+        // (most are 32-bit ARM). Building all ABIs roughly triples APK size.
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+        }
     }
 
     buildTypes {
@@ -34,17 +40,20 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    // Bundled android-serialport-api native code (replaces the JitPack
+    // dependency that was failing to resolve). Source lives in
+    // android/app/src/main/cpp — see CMakeLists.txt there.
+    //
+    // No explicit CMake version pinned so AGP picks whichever ships with
+    // the installed NDK (Codemagic has 3.18+ which is sufficient).
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
+    }
 }
 
 flutter {
     source = "../.."
-}
-
-dependencies {
-    // Direct TTY serial access — opens /dev/ttyS* via JNI for talking to the
-    // Reyeah Control Board. This is what the factory app uses (confirmed by
-    // decompiling). The usb_serial plugin we kept for backward compatibility
-    // doesn't see this board because it's wired to the tablet's UART pins,
-    // not through a USB-to-serial bridge.
-    implementation("com.github.licheedev:Android-SerialPort-API:2.1.1")
 }
