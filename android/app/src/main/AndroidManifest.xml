@@ -14,6 +14,10 @@
     <!-- Auto-start cuando la tablet enciende tras corte de luz -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Kiosk hardening: keep the activity above the lock screen / on boot -->
+    <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
+    <uses-permission android:name="android.permission.SHOW_WHEN_LOCKED" />
+
     <application
         android:label="VMFS USA"
         android:name="${applicationName}"
@@ -29,6 +33,9 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:keepScreenOn="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:excludeFromRecents="true"
             android:windowSoftInputMode="adjustResize">
 
             <meta-data

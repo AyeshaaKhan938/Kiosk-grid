@@ -3,13 +3,15 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../models/advertisement.dart';
 import '../services/advertisement_service.dart';
-import 'product_browser_screen.dart';
+import 'admin_config_screen.dart';
+import 'lottery_code_screen.dart';
 
 /// Pantalla idle/screensaver del kiosk.
 ///
 /// Estado de reposo: anuncios a pantalla completa con auto-rotación.
-/// Tap en cualquier lugar → reemplaza con [ProductBrowserScreen]
-/// (pushReplacement para evitar pantallas superpuestas).
+/// Tap en cualquier lugar → abre [LotteryCodeScreen] para que el cliente
+/// ingrese el código del cupón directamente. No hay catálogo de productos
+/// intermedio — el flujo es: ads → código → resultado.
 class IdleScreen extends StatefulWidget {
   const IdleScreen({super.key});
 
@@ -25,6 +27,10 @@ class _IdleScreenState extends State<IdleScreen>
   int   _adIndex = 0;
   Timer? _adTimer;
   late PageController _pageCtrl;
+
+  // ── Secret admin gesture (5 taps in the top-left corner within 2s) ────────
+  int       _secretTaps = 0;
+  DateTime? _lastSecretTap;
 
   // ── Slides demo (usados cuando no hay anuncios del backend) ───────────────
   static const List<_DemoSlide> _demoSlides = [
@@ -152,10 +158,23 @@ class _IdleScreenState extends State<IdleScreen>
       ..forward();
   }
 
-  // ── Tap → ProductBrowserScreen (pushReplacement: sin superposición) ───────
+  // ── Hidden admin entry: 5 taps in top-left corner within 2 seconds ────────
+  void _onSecretTap() {
+    final now = DateTime.now();
+    if (_lastSecretTap != null && now.difference(_lastSecretTap!).inSeconds > 2) {
+      _secretTaps = 0;
+    }
+    _lastSecretTap = now;
+    if (++_secretTaps >= 5) {
+      _secretTaps = 0;
+      showAdminPinDialog(context);
+    }
+  }
+
+  // ── Tap → LotteryCodeScreen (push, not replace — so back returns to ads) ──
   void _onTap() {
-    Navigator.of(context).pushReplacement(PageRouteBuilder(
-      pageBuilder: (_, animation, __) => const ProductBrowserScreen(),
+    Navigator.of(context).push(PageRouteBuilder(
+      pageBuilder: (_, animation, __) => const LotteryCodeScreen(),
       transitionsBuilder: (_, animation, __, child) => FadeTransition(
         opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
         child: child,
@@ -174,12 +193,40 @@ class _IdleScreenState extends State<IdleScreen>
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Semantics(
-        label: 'VMFS USA vending machine kiosk. Touch anywhere to browse products.',
+        label: 'VMFS USA vending machine kiosk. Touch anywhere to enter your lottery code.',
         button: true,
-        child: GestureDetector(
-        onTap: _onTap,
-        behavior: HitTestBehavior.opaque,
         child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Base layer: full-screen tappable region → lottery code entry
+            GestureDetector(
+              onTap: _onTap,
+              behavior: HitTestBehavior.opaque,
+              child: _buildSlideStack(useDemo: useDemo, slideCount: slideCount),
+            ),
+
+            // Invisible admin entry — top-left 60x60 area, 5 taps within 2s.
+            // Sits above the main GestureDetector so taps here don't open
+            // the lottery screen.
+            Positioned(
+              top: 0,
+              left: 0,
+              width: 60,
+              height: 60,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _onSecretTap,
+                child: const SizedBox.expand(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSlideStack({required bool useDemo, required int slideCount}) {
+    return Stack(
           fit: StackFit.expand,
           children: [
             // ── Carrusel de slides ────────────────────────────────────────
@@ -263,7 +310,7 @@ class _IdleScreenState extends State<IdleScreen>
                     Icon(Icons.touch_app_rounded, color: Colors.white70, size: 20),
                     SizedBox(width: 8),
                     Text(
-                      'TOUCH ANYWHERE TO BROWSE',
+                      'TOUCH TO ENTER YOUR LOTTERY CODE',
                       style: TextStyle(
                         color: Colors.white70,
                         fontSize: 12,
@@ -276,10 +323,7 @@ class _IdleScreenState extends State<IdleScreen>
               ),
             ),
           ],
-        ),
-      ),
-      ),
-    );
+        );
   }
 }
 
