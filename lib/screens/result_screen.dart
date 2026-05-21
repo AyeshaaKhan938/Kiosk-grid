@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -118,6 +119,10 @@ class _ResultScreenState extends State<ResultScreen> {
     final size = MediaQuery.of(context).size;
     final w = size.width;
     final h = size.height;
+    // `scale` decouples font/icon sizing from aspect ratio. Using min(w,h)
+    // keeps text the same physical size on 1:1, 1:2 portrait, and even
+    // landscape — only spacings adapt to screen shape.
+    final scale = math.min(w, h);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -137,7 +142,7 @@ class _ResultScreenState extends State<ResultScreen> {
                 horizontal: w * 0.05,
                 vertical:   h * 0.03,
               ),
-              child: _buildBody(w, h),
+              child: _buildBody(w, h, scale),
             ),
           ],
         ),
@@ -145,34 +150,34 @@ class _ResultScreenState extends State<ResultScreen> {
     );
   }
 
-  Widget _buildBody(double w, double h) {
+  Widget _buildBody(double w, double h, double scale) {
     switch (_state) {
       case _Flow.dispensing:
         return Column(
           children: [
-            _ChevyTigersLockup(w: w, h: h),
+            _ChevyTigersLockup(w: w, scale: scale),
             const Spacer(),
             SizedBox(
-              width: w * 0.15, height: w * 0.15,
+              width: scale * 0.15, height: scale * 0.15,
               child: const CircularProgressIndicator(
                   color: Colors.white, strokeWidth: 4),
             ),
-            SizedBox(height: h * 0.03),
+            SizedBox(height: scale * 0.03),
             Text(
               'DISPENSING YOUR ITEM…',
               style: TextStyle(
                 color: Colors.white,
-                fontSize: w * 0.065,
+                fontSize: scale * 0.065,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 2,
               ),
             ),
-            SizedBox(height: h * 0.015),
+            SizedBox(height: scale * 0.015),
             Text(
               widget.productName ?? widget.slot?.productName ?? '',
               style: TextStyle(
                 color: Colors.white54,
-                fontSize: w * 0.04,
+                fontSize: scale * 0.04,
               ),
             ),
             const Spacer(),
@@ -182,9 +187,9 @@ class _ResultScreenState extends State<ResultScreen> {
       case _Flow.success:
         return Column(
           children: [
-            _ChevyTigersLockup(w: w, h: h),
+            _ChevyTigersLockup(w: w, scale: scale),
             const Spacer(),
-            // HUGE thank you
+            // HUGE thank you. FittedBox prevents overflow on narrow widths.
             FittedBox(
               fit: BoxFit.scaleDown,
               child: Text(
@@ -192,7 +197,7 @@ class _ResultScreenState extends State<ResultScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: w * 0.18,
+                  fontSize: scale * 0.18,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 2,
                   height: 1,
@@ -200,62 +205,65 @@ class _ResultScreenState extends State<ResultScreen> {
               ),
             ),
             const Spacer(),
-            // Three-line collect message — matches the design layout
-            Text(
-              'PLEASE\nCOLLECT YOUR\nITEM BELOW',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: w * 0.105,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.5,
-                height: 1.05,
+            // Three-line collect message — matches the design layout.
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                'PLEASE\nCOLLECT YOUR\nITEM BELOW',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: scale * 0.105,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                  height: 1.05,
+                ),
               ),
             ),
-            SizedBox(height: h * 0.04),
+            SizedBox(height: scale * 0.04),
             Text(
               'Returning to home in a few seconds…',
-              style: TextStyle(color: Colors.white38, fontSize: w * 0.028),
+              style: TextStyle(color: Colors.white38, fontSize: scale * 0.028),
             ),
-            SizedBox(height: h * 0.01),
+            SizedBox(height: scale * 0.01),
           ],
         );
 
       case _Flow.error:
         return Column(
           children: [
-            _ChevyTigersLockup(w: w, h: h),
+            _ChevyTigersLockup(w: w, scale: scale),
             const Spacer(),
             Icon(Icons.error_outline_rounded,
-                color: Colors.redAccent, size: w * 0.2),
-            SizedBox(height: h * 0.02),
+                color: Colors.redAccent, size: scale * 0.2),
+            SizedBox(height: scale * 0.02),
             Text(
               'DISPENSE FAILED',
               style: TextStyle(
                 color: Colors.redAccent,
-                fontSize: w * 0.075,
+                fontSize: scale * 0.075,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 2,
               ),
             ),
-            SizedBox(height: h * 0.02),
+            SizedBox(height: scale * 0.02),
             Padding(
               padding: EdgeInsets.symmetric(horizontal: w * 0.05),
               child: Text(
                 _errorMsg,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white70, fontSize: w * 0.04),
+                style: TextStyle(color: Colors.white70, fontSize: scale * 0.04),
               ),
             ),
-            SizedBox(height: h * 0.04),
+            SizedBox(height: scale * 0.04),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 _PromoButton(label: 'TRY AGAIN', onTap: _retry,
-                    primary: true, w: w, h: h),
-                SizedBox(width: w * 0.04),
+                    primary: true, scale: scale),
+                SizedBox(width: scale * 0.04),
                 _PromoButton(label: 'HOME', onTap: _returnToIdle,
-                    primary: false, w: w, h: h),
+                    primary: false, scale: scale),
               ],
             ),
             const Spacer(),
@@ -265,37 +273,37 @@ class _ResultScreenState extends State<ResultScreen> {
       case _Flow.noSlot:
         return Column(
           children: [
-            _ChevyTigersLockup(w: w, h: h),
+            _ChevyTigersLockup(w: w, scale: scale),
             const Spacer(),
             Icon(Icons.warning_amber_rounded,
-                color: const Color(0xFFFFC107), size: w * 0.2),
-            SizedBox(height: h * 0.02),
+                color: const Color(0xFFFFC107), size: scale * 0.2),
+            SizedBox(height: scale * 0.02),
             Text(
               'NO ITEM ASSIGNED',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white,
-                fontSize: w * 0.075,
+                fontSize: scale * 0.075,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 2,
               ),
             ),
-            SizedBox(height: h * 0.02),
+            SizedBox(height: scale * 0.02),
             Padding(
               padding: EdgeInsets.symmetric(horizontal: w * 0.06),
               child: Text(
                 'Your code was accepted but no product is configured for it. '
                 'Please notify staff.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white70, fontSize: w * 0.04),
+                style: TextStyle(color: Colors.white70, fontSize: scale * 0.04),
               ),
             ),
             const Spacer(),
             Text(
               'Returning to home…',
-              style: TextStyle(color: Colors.white38, fontSize: w * 0.028),
+              style: TextStyle(color: Colors.white38, fontSize: scale * 0.028),
             ),
-            SizedBox(height: h * 0.01),
+            SizedBox(height: scale * 0.01),
           ],
         );
     }
@@ -306,33 +314,37 @@ class _ResultScreenState extends State<ResultScreen> {
 
 /// CHEVROLET | D combined lockup with "Official Vehicle of the Detroit Tigers"
 /// tagline. One image so the relative sizing of all three elements stays
-/// pixel-perfect.
+/// pixel-perfect. Height capped via `scale` so a wide logo never dominates
+/// on square / short screens.
 class _ChevyTigersLockup extends StatelessWidget {
   final double w;
-  final double h;
-  const _ChevyTigersLockup({required this.w, required this.h});
+  final double scale;
+  const _ChevyTigersLockup({required this.w, required this.scale});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(top: h * 0.01, bottom: h * 0.02),
-      child: Image.asset(
-        'assets/images/chevrolet_tigers_lockup.png',
-        width: w * 0.7,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => Container(
-          padding: EdgeInsets.all(w * 0.03),
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.white24),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            'Save to:\nassets/images/chevrolet_tigers_lockup.png',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white54,
-              fontSize: w * 0.025,
-              fontFamily: 'monospace',
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: scale * 0.22),
+      child: Padding(
+        padding: EdgeInsets.only(top: scale * 0.01, bottom: scale * 0.02),
+        child: Image.asset(
+          'assets/images/chevrolet_tigers_lockup.png',
+          width: w * 0.7,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => Container(
+            padding: EdgeInsets.all(scale * 0.03),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.white24),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              'Save to:\nassets/images/chevrolet_tigers_lockup.png',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: scale * 0.03,
+                fontFamily: 'monospace',
+              ),
             ),
           ),
         ),
@@ -345,14 +357,12 @@ class _PromoButton extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   final bool primary;
-  final double w;
-  final double h;
+  final double scale;
   const _PromoButton({
     required this.label,
     required this.onTap,
     required this.primary,
-    required this.w,
-    required this.h,
+    required this.scale,
   });
 
   @override
@@ -360,8 +370,8 @@ class _PromoButton extends StatelessWidget {
     final bg = primary ? const Color(0xFFFFC107) : Colors.transparent;
     final fg = primary ? Colors.black : Colors.white;
     return SizedBox(
-      width:  w * 0.32,
-      height: h * 0.07,
+      width:  scale * 0.4,
+      height: scale * 0.11,
       child: ElevatedButton(
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
@@ -377,7 +387,7 @@ class _PromoButton extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            fontSize: w * 0.045,
+            fontSize: scale * 0.045,
             fontWeight: FontWeight.w900,
             letterSpacing: 3,
           ),

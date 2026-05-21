@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/machine_slot.dart';
@@ -97,6 +99,10 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
     final size = MediaQuery.of(context).size;
     final w = size.width;
     final h = size.height;
+    // `scale` decouples font/icon sizing from aspect ratio. Using min(w,h)
+    // keeps text the same physical size on 1:1, 1:2 portrait, and even
+    // landscape — only spacings adapt to the screen shape.
+    final scale = math.min(w, h);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -123,14 +129,18 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Header: wide CHEVROLET wordmark, fills ~95% of width
-                  Padding(
-                    padding: EdgeInsets.only(top: h * 0.005, bottom: h * 0.03),
-                    child: Image.asset(
-                      'assets/images/chevrolet_header_logo.png',
-                      fit: BoxFit.fitWidth,
-                      errorBuilder: (_, __, ___) => _missing(
-                          'chevrolet_header_logo.png', w),
+                  // Header: wide CHEVROLET wordmark. Cap height so a wide
+                  // logo doesn't dominate on square / short screens.
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: scale * 0.18),
+                    child: Padding(
+                      padding: EdgeInsets.only(top: h * 0.005, bottom: h * 0.025),
+                      child: Image.asset(
+                        'assets/images/chevrolet_header_logo.png',
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => _missing(
+                            'chevrolet_header_logo.png', scale),
+                      ),
                     ),
                   ),
 
@@ -142,27 +152,27 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _InstructionLine(num: '1.', verb: 'SCAN',
-                              rest: ' the QR code below', baseFont: w * 0.05),
-                          SizedBox(height: h * 0.008),
+                              rest: ' the QR code below', baseFont: scale * 0.05),
+                          SizedBox(height: scale * 0.008),
                           _InstructionLine(num: '2.', verb: 'REGISTER',
-                              rest: ' with Chevy', baseFont: w * 0.05),
-                          SizedBox(height: h * 0.008),
+                              rest: ' with Chevy', baseFont: scale * 0.05),
+                          SizedBox(height: scale * 0.008),
                           _InstructionLine(num: '3.', verb: 'ENTER',
-                              rest: ' your unique code below', baseFont: w * 0.05),
-                          SizedBox(height: h * 0.008),
+                              rest: ' your unique code below', baseFont: scale * 0.05),
+                          SizedBox(height: scale * 0.008),
                           _InstructionLine(num: '4.', verb: 'COLLECT',
-                              rest: ' your item', baseFont: w * 0.05),
-                          SizedBox(height: h * 0.008),
+                              rest: ' your item', baseFont: scale * 0.05),
+                          SizedBox(height: scale * 0.008),
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(Icons.recycling_rounded,
-                                  color: Colors.white, size: w * 0.055),
-                              SizedBox(width: w * 0.02),
+                                  color: Colors.white, size: scale * 0.055),
+                              SizedBox(width: scale * 0.02),
                               Text('Recycle the box',
                                   style: TextStyle(
                                     color: Colors.white,
-                                    fontSize: w * 0.05,
+                                    fontSize: scale * 0.05,
                                     fontWeight: FontWeight.w500,
                                   )),
                             ],
@@ -172,8 +182,12 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
                     ),
                   ),
 
-                  // Tiger paw QR — oversized, biased right + translated off
-                  // the right edge so it reads as "coming in from outside".
+                  // Tiger paw QR — fills whatever vertical space is left
+                  // after the other widgets claim their intrinsic heights.
+                  // No fixed height, so it shrinks on square screens and
+                  // grows on tall ones without ever overflowing.
+                  // Biased right and translated off the right edge so it
+                  // reads as "coming in from outside the screen".
                   Expanded(
                     child: Align(
                       alignment: Alignment.centerRight,
@@ -181,10 +195,9 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
                         offset: Offset(w * 0.12, 0),
                         child: Image.asset(
                           'assets/images/tiger_paw_qr.png',
-                          height: h * 0.32,
                           fit: BoxFit.contain,
                           errorBuilder: (_, __, ___) => _missing(
-                              'tiger_paw_qr.png', w),
+                              'tiger_paw_qr.png', scale),
                         ),
                       ),
                     ),
@@ -198,7 +211,7 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: w * 0.07,
+                        fontSize: scale * 0.07,
                         fontWeight: FontWeight.w900,
                         height: 1.1,
                         letterSpacing: 1.5,
@@ -211,8 +224,7 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
                     controller: _codeCtrl,
                     focusNode:  _focusNode,
                     enabled:    _state != _State.validating,
-                    width:      w,
-                    height:     h,
+                    scale:      scale,
                     onChanged:  (_) => setState(() {
                       if (_state == _State.error) _state = _State.idle;
                     }),
@@ -221,9 +233,10 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
 
                   // Compact status / error line (does NOT push layout)
                   SizedBox(
-                    height: h * 0.05,
+                    height: scale * 0.07,
                     child: Center(
-                      child: _StatusLine(state: _state, msg: _errorMsg, w: w),
+                      child: _StatusLine(
+                          state: _state, msg: _errorMsg, scale: scale),
                     ),
                   ),
                 ],
@@ -235,8 +248,8 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
     );
   }
 
-  Widget _missing(String fname, double w) => Container(
-        padding: EdgeInsets.all(w * 0.03),
+  Widget _missing(String fname, double scale) => Container(
+        padding: EdgeInsets.all(scale * 0.03),
         decoration: BoxDecoration(
           border: Border.all(color: Colors.white24),
           borderRadius: BorderRadius.circular(8),
@@ -245,7 +258,7 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
           'Save to:\nassets/images/$fname',
           textAlign: TextAlign.center,
           style: TextStyle(
-              color: Colors.white54, fontSize: w * 0.025,
+              color: Colors.white54, fontSize: scale * 0.03,
               fontFamily: 'monospace'),
         ),
       );
@@ -288,8 +301,7 @@ class _CodeInput extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool enabled;
-  final double width;
-  final double height;
+  final double scale;
   final ValueChanged<String> onChanged;
   final ValueChanged<String> onSubmitted;
 
@@ -297,8 +309,7 @@ class _CodeInput extends StatelessWidget {
     required this.controller,
     required this.focusNode,
     required this.enabled,
-    required this.width,
-    required this.height,
+    required this.scale,
     required this.onChanged,
     required this.onSubmitted,
   });
@@ -306,7 +317,7 @@ class _CodeInput extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: height * 0.085,
+      height: scale * 0.12,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(4),
@@ -324,9 +335,9 @@ class _CodeInput extends StatelessWidget {
         ],
         style: TextStyle(
           color: Colors.black,
-          fontSize: width * 0.075,
+          fontSize: scale * 0.075,
           fontWeight: FontWeight.w900,
-          letterSpacing: width * 0.008,
+          letterSpacing: scale * 0.008,
         ),
         textAlign: TextAlign.center,
         cursorColor: Colors.black,
@@ -344,8 +355,12 @@ class _CodeInput extends StatelessWidget {
 class _StatusLine extends StatelessWidget {
   final _State state;
   final String msg;
-  final double w;
-  const _StatusLine({required this.state, required this.msg, required this.w});
+  final double scale;
+  const _StatusLine({
+    required this.state,
+    required this.msg,
+    required this.scale,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -354,15 +369,15 @@ class _StatusLine extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           SizedBox(
-            width: w * 0.04, height: w * 0.04,
+            width: scale * 0.04, height: scale * 0.04,
             child: const CircularProgressIndicator(
                 color: Colors.white, strokeWidth: 2),
           ),
-          SizedBox(width: w * 0.025),
+          SizedBox(width: scale * 0.025),
           Text('Validating…',
               style: TextStyle(
                 color: Colors.white70,
-                fontSize: w * 0.032,
+                fontSize: scale * 0.032,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 1,
               )),
@@ -374,15 +389,15 @@ class _StatusLine extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.error_outline_rounded,
-              color: Colors.redAccent, size: w * 0.04),
-          SizedBox(width: w * 0.02),
+              color: Colors.redAccent, size: scale * 0.04),
+          SizedBox(width: scale * 0.02),
           Flexible(
             child: Text(
               msg,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.redAccent,
-                fontSize: w * 0.032,
+                fontSize: scale * 0.032,
                 fontWeight: FontWeight.w600,
               ),
             ),
