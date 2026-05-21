@@ -11,7 +11,15 @@ import 'widgets/accessibility_fab.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await dotenv.load(fileName: '.env');
+  // .env is optional — the file is gitignored and may be absent on CI
+  // builds or fresh clones. When it isn't present, AppConfig falls back
+  // to the production constants baked into app_config.dart, so the app
+  // still launches with valid credentials.
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (_) {
+    // No .env on disk — proceed with baked defaults.
+  }
   await AppConfig.init();
 
   // Quietly poll vms-cloud for new APK releases. The idle screen shows a
