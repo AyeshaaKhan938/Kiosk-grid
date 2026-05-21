@@ -31,8 +31,9 @@ class LotteryCodeScreen extends StatefulWidget {
 enum _State { idle, validating, error }
 
 class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
-  final _codeCtrl  = TextEditingController();
-  final _focusNode = FocusNode();
+  final _codeCtrl    = TextEditingController();
+  final _focusNode   = FocusNode();
+  final _scrollCtrl  = ScrollController();
 
   _State _state = _State.idle;
   String _errorMsg = '';
@@ -41,9 +42,32 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
       _state != _State.validating && _codeCtrl.text.trim().length >= 4;
 
   @override
+  void initState() {
+    super.initState();
+    // When the input gains focus the soft keyboard slides in; wait for the
+    // layout to settle and then scroll the list to its bottom so the input
+    // sits just above the keyboard instead of being trapped behind it.
+    _focusNode.addListener(_onFocusChanged);
+  }
+
+  void _onFocusChanged() {
+    if (!_focusNode.hasFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollCtrl.hasClients) return;
+      _scrollCtrl.animateTo(
+        _scrollCtrl.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  @override
   void dispose() {
+    _focusNode.removeListener(_onFocusChanged);
     _codeCtrl.dispose();
     _focusNode.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
@@ -98,7 +122,13 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      resizeToAvoidBottomInset: false,
+      // Resize the body when the soft keyboard opens so the input field
+      // doesn't end up trapped behind it. Together with the
+      // SingleChildScrollView below and Flutter's built-in ensure-visible
+      // behaviour on focused TextFields, this makes the layout scroll just
+      // enough to keep the input visible above the keyboard, and snap back
+      // when the keyboard closes.
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
         child: LayoutBuilder(
           builder: (ctx, constraints) {
@@ -130,6 +160,7 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
                 // screens), allow scrolling instead of clipping or
                 // disappearing widgets".
                 SingleChildScrollView(
+                  controller: _scrollCtrl,
                   physics: const ClampingScrollPhysics(),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(minHeight: h),
