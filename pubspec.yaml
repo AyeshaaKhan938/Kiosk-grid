@@ -46,7 +46,9 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  # .env + Chevrolet / Detroit Tigers branding assets
+  # Chevrolet / Detroit Tigers branding assets.
+  # .env is intentionally NOT listed — it's gitignored and may not exist
+  # on CI / fresh clones. main.dart loads it tolerantly at startup; when
+  # missing, app_config.dart's baked production fallbacks take over.
   assets:
-    - .env
     - assets/images/
