@@ -1,91 +1,61 @@
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/machine_slot.dart';
 import '../services/api_service.dart';
 import 'result_screen.dart';
 
-/// Pantalla de ingreso de cupón de lotería.
+/// Chevrolet / Detroit Tigers branded lottery code entry screen.
 ///
-/// Flujo:
-///   1. Usuario escribe su código (auto-mayúsculas)
-///   2. Toca "VALIDATE"
-///   3. Se llama al backend → animación de ruleta
-///   4. Resultado: navega a ResultScreen con el precio y producto
+/// Sized off MediaQuery so the same widget tree looks balanced on the
+/// dev preview (~400 × 700) AND on the kiosk's 45" vertical 1:2 panel
+/// (e.g. 1080 × 2160). All paddings / font sizes / images are expressed
+/// as fractions of width or height.
 ///
-/// Se puede abrir con o sin [slot] de contexto.
+/// Customer flow:
+///   1. They scan the box's QR → register with Chevy
+///   2. They type the unique code into the big white input
+///   3. They press the keyboard Enter / Done key (no on-screen submit
+///      button — by design)
+///   4. We validate and hand off to [ResultScreen] which dispenses + shows
+///      the THANK YOU screen.
 class LotteryCodeScreen extends StatefulWidget {
-  /// Slot desde el que se abrió (opcional — viene de ProductDetailScreen).
   final MachineSlot? slot;
-
   const LotteryCodeScreen({super.key, this.slot});
 
   @override
   State<LotteryCodeScreen> createState() => _LotteryCodeScreenState();
 }
 
-enum _LotteryState { idle, validating, success, error }
+enum _State { idle, validating, error }
 
-class _LotteryCodeScreenState extends State<LotteryCodeScreen>
-    with TickerProviderStateMixin {
-  final _codeCtrl = TextEditingController();
+class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
+  final _codeCtrl  = TextEditingController();
   final _focusNode = FocusNode();
 
-  _LotteryState _state = _LotteryState.idle;
+  _State _state = _State.idle;
   String _errorMsg = '';
 
-  // ── Animación ruleta ──────────────────────────────────────────────────────
-  late AnimationController _spinCtrl;
-  late AnimationController _resultCtrl;
-  late Animation<double>   _resultScale;
-  late Animation<double>   _resultFade;
-
-  bool get _canValidate =>
-      _state == _LotteryState.idle && _codeCtrl.text.trim().length >= 4;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _spinCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    );
-
-    _resultCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _resultScale = Tween<double>(begin: 0.6, end: 1.0).animate(
-        CurvedAnimation(parent: _resultCtrl, curve: Curves.elasticOut));
-    _resultFade = Tween<double>(begin: 0.0, end: 1.0).animate(
-        CurvedAnimation(parent: _resultCtrl, curve: Curves.easeIn));
-  }
+  bool get _canSubmit =>
+      _state != _State.validating && _codeCtrl.text.trim().length >= 4;
 
   @override
   void dispose() {
     _codeCtrl.dispose();
     _focusNode.dispose();
-    _spinCtrl.dispose();
-    _resultCtrl.dispose();
     super.dispose();
   }
-
-  // ── Validación ────────────────────────────────────────────────────────────
 
   Future<void> _validate() async {
     final code = _codeCtrl.text.trim().toUpperCase();
     if (code.isEmpty) return;
 
     _focusNode.unfocus();
-    setState(() { _state = _LotteryState.validating; _errorMsg = ''; });
-
-    // Arrancar animación de ruleta
-    _spinCtrl.repeat();
+    setState(() { _state = _State.validating; _errorMsg = ''; });
 
     try {
       final result = await ApiService.lookupCode(code);
-
       if (!mounted) return;
 
       if (result.alreadyRedeemed) {
@@ -93,430 +63,406 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen>
         return;
       }
 
-      // Detener ruleta y mostrar animación de éxito
-      _spinCtrl.stop();
-      setState(() => _state = _LotteryState.success);
-      await _resultCtrl.forward();
-
-      if (!mounted) return;
-
-      // Pequeña pausa para que se vea el éxito antes de navegar
-      await Future.delayed(const Duration(milliseconds: 800));
-      if (!mounted) return;
-
-      // Navegar a ResultScreen con los datos del premio
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
           pageBuilder: (_, animation, __) => ResultScreen(
-            price:       result.prizeAmount,
-            message:     'You won ${result.prizeName} on ${result.productName}!',
-            lineNumber:  result.lineNumber,
-            machineNo:   result.machineNo,
-            lotteryCode: result.code,
-            tier:        result.tier,
-            slot:        widget.slot,
-            productName: result.productName,
+            price:         result.prizeAmount,
+            message:       result.productName,
+            lineNumber:    result.lineNumber,
+            machineNo:     result.machineNo,
+            lotteryCode:   result.code,
+            tier:          result.tier,
+            slot:          widget.slot,
+            productName:   result.productName,
+            skipCountdown: true,
           ),
           transitionsBuilder: (_, animation, __, child) =>
               FadeTransition(opacity: animation, child: child),
-          transitionDuration: const Duration(milliseconds: 500),
+          transitionDuration: const Duration(milliseconds: 400),
         ),
       );
     } on LotteryCodeException catch (e) {
       if (mounted) _showError(e.message);
-    } catch (e) {
-      if (mounted) _showError('Connection error. Check your network.');
+    } catch (_) {
+      if (mounted) _showError('Connection error. Check the network.');
     }
   }
 
   void _showError(String msg) {
-    _spinCtrl.stop();
-    _spinCtrl.reset();
-    setState(() { _state = _LotteryState.error; _errorMsg = msg; });
+    setState(() { _state = _State.error; _errorMsg = msg; });
+    _focusNode.requestFocus();
   }
-
-  void _resetToIdle() {
-    setState(() { _state = _LotteryState.idle; _errorMsg = ''; });
-    _resultCtrl.reset();
-    _codeCtrl.clear();
-    Future.delayed(const Duration(milliseconds: 100), () => _focusNode.requestFocus());
-  }
-
-  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final cs      = Theme.of(context).colorScheme;
-    final bg      = Theme.of(context).scaffoldBackgroundColor;
-    final primary = cs.primary;
-
     return Scaffold(
-      backgroundColor: bg,
-      body: Stack(
-        children: [
-          // Contenido: arriba = branding/animación · abajo = input
-          SafeArea(
-            child: Column(
-              children: [
-                // Mitad superior — animación + título
-                Expanded(flex: 45, child: _buildTopPanel(cs: cs, bg: bg, primary: primary)),
-                // Divisor
-                Container(height: 1,
-                    color: primary.withValues(alpha: 0.15)),
-                // Mitad inferior — formulario
-                Expanded(flex: 55, child: _buildBottomPanel(cs: cs, bg: bg, primary: primary)),
-              ],
-            ),
-          ),
+      backgroundColor: Colors.black,
+      resizeToAvoidBottomInset: false,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (ctx, constraints) {
+            final w = constraints.maxWidth;
+            final h = constraints.maxHeight;
+            // `scale` is the unit all fonts/icons/image sizes are computed
+            // from. We use min(w, h / 1.8) so on a wider-but-not-taller
+            // screen (where h is the bottleneck) widgets shrink and
+            // everything still fits. On the production 1:2 portrait
+            // kiosk (h ≈ 2w) min(w, h/1.8) ≈ w, so sizes are unaffected.
+            final scale = math.min(w, h / 1.8);
 
-          // Back button
-          Positioned(
-            top: 12, left: 90,
-            child: SafeArea(
-              child: Semantics(
-                label: 'Go back',
-                button: true,
-                child: GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: cs.onSurface.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.12)),
-                    ),
-                    child: Icon(Icons.arrow_back_ios_new_rounded,
-                        color: cs.onSurface.withValues(alpha: 0.65), size: 16),
+            return Stack(
+              children: [
+                // Hidden admin back-exit (top-left 60×60).
+                Positioned(
+                  top: 0, left: 0, width: 60, height: 60,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => Navigator.pop(context),
+                    child: const SizedBox.expand(),
                   ),
                 ),
-              ),
-            ),
-          ),
+
+                // SingleChildScrollView + ConstrainedBox(minHeight: h) +
+                // IntrinsicHeight gives us "fill the viewport, use Spacers
+                // to distribute extra space; if the intrinsic content is
+                // taller than the viewport (very square / very short
+                // screens), allow scrolling instead of clipping or
+                // disappearing widgets".
+                SingleChildScrollView(
+                  physics: const ClampingScrollPhysics(),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: h),
+                    child: IntrinsicHeight(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: w * 0.05,
+                          vertical:   h * 0.02,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // Header: wide CHEVROLET wordmark. Cap height
+                            // so a wide logo can't dominate on square /
+                            // short screens.
+                            ConstrainedBox(
+                              constraints:
+                                  BoxConstraints(maxHeight: scale * 0.15),
+                              child: Image.asset(
+                                'assets/images/chevrolet_header_logo.png',
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => _missing(
+                                    'chevrolet_header_logo.png', scale),
+                              ),
+                            ),
+                            SizedBox(height: scale * 0.03),
+
+                            // Centered instruction block, text left-aligned
+                            // inside.
+                            Align(
+                              alignment: Alignment.center,
+                              child: IntrinsicWidth(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    _InstructionLine(
+                                        num: '1.', verb: 'SCAN',
+                                        rest: ' the QR code below',
+                                        baseFont: scale * 0.05),
+                                    SizedBox(height: scale * 0.008),
+                                    _InstructionLine(
+                                        num: '2.', verb: 'REGISTER',
+                                        rest: ' with Chevy',
+                                        baseFont: scale * 0.05),
+                                    SizedBox(height: scale * 0.008),
+                                    _InstructionLine(
+                                        num: '3.', verb: 'ENTER',
+                                        rest: ' your unique code below',
+                                        baseFont: scale * 0.05),
+                                    SizedBox(height: scale * 0.008),
+                                    _InstructionLine(
+                                        num: '4.', verb: 'COLLECT',
+                                        rest: ' your item',
+                                        baseFont: scale * 0.05),
+                                    SizedBox(height: scale * 0.008),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.recycling_rounded,
+                                            color: Colors.white,
+                                            size: scale * 0.055),
+                                        SizedBox(width: scale * 0.02),
+                                        Text('Recycle the box',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: scale * 0.05,
+                                              fontWeight: FontWeight.w500,
+                                            )),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                            // Flexible space above the paw.
+                            const Spacer(),
+
+                            // Tiger paw QR — sized big enough that the arm
+                            // visibly extends past the right edge of the
+                            // viewport. The image is composed
+                            // QR-on-left, tiger-arm-on-right; we
+                            // center-align it in the slot and translate
+                            // right by ~1/4 of its own width so the QR
+                            // (which sits ~25% from the image's left
+                            // edge) lands at the screen's horizontal
+                            // center while the arm extends off-screen.
+                            // OverflowBox(maxWidth: ∞) lets that overflow
+                            // happen without being clipped.
+                            SizedBox(
+                              width:  double.infinity,
+                              height: scale * 0.42,
+                              child: OverflowBox(
+                                minWidth:  0,
+                                maxWidth:  double.infinity,
+                                alignment: Alignment.center,
+                                child: Transform.translate(
+                                  offset: Offset(scale * 0.22, 0),
+                                  child: Image.asset(
+                                    'assets/images/tiger_paw_qr.png',
+                                    height: scale * 0.42,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) => _missing(
+                                        'tiger_paw_qr.png', scale),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            // Flexible space below the paw.
+                            const Spacer(),
+
+                            // Big bold prompt — two forced lines.
+                            Padding(
+                              padding: EdgeInsets.only(bottom: scale * 0.02),
+                              child: Text(
+                                'ENTER YOUR UNIQUE\nREDEMPTION CODE HERE:',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: scale * 0.07,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.1,
+                                  letterSpacing: 1.5,
+                                ),
+                              ),
+                            ),
+
+                            // White input field.
+                            _CodeInput(
+                              controller: _codeCtrl,
+                              focusNode:  _focusNode,
+                              enabled:    _state != _State.validating,
+                              scale:      scale,
+                              onChanged:  (_) => setState(() {
+                                if (_state == _State.error) {
+                                  _state = _State.idle;
+                                }
+                              }),
+                              onSubmitted: (_) {
+                                if (_canSubmit) _validate();
+                              },
+                            ),
+
+                            // Compact status / error line.
+                            SizedBox(
+                              height: scale * 0.07,
+                              child: Center(
+                                child: _StatusLine(
+                                    state: _state,
+                                    msg: _errorMsg,
+                                    scale: scale),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _missing(String fname, double scale) => Container(
+        padding: EdgeInsets.all(scale * 0.03),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.white24),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          'Save to:\nassets/images/$fname',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+              color: Colors.white54, fontSize: scale * 0.03,
+              fontFamily: 'monospace'),
+        ),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _InstructionLine extends StatelessWidget {
+  final String num;
+  final String verb;
+  final String rest;
+  final double baseFont;
+  const _InstructionLine({
+    required this.num,
+    required this.verb,
+    required this.rest,
+    required this.baseFont,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return RichText(
+      text: TextSpan(
+        style: TextStyle(color: Colors.white, fontSize: baseFont, height: 1.3),
+        children: [
+          TextSpan(text: '$num  ',
+              style: const TextStyle(fontWeight: FontWeight.w900)),
+          TextSpan(text: verb,
+              style: const TextStyle(
+                  fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+          TextSpan(text: rest,
+              style: const TextStyle(fontWeight: FontWeight.w400)),
         ],
       ),
     );
   }
+}
 
-  // ── Panel superior — icono centrado arriba, texto debajo ─────────────────
+class _CodeInput extends StatelessWidget {
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool enabled;
+  final double scale;
+  final ValueChanged<String> onChanged;
+  final ValueChanged<String> onSubmitted;
 
-  Widget _buildTopPanel({required ColorScheme cs, required Color bg, required Color primary}) {
+  const _CodeInput({
+    required this.controller,
+    required this.focusNode,
+    required this.enabled,
+    required this.scale,
+    required this.onChanged,
+    required this.onSubmitted,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      color: cs.surfaceContainerHighest,
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Icono / animación
-            _buildCenterAnimation(cs: cs, primary: primary),
-            const SizedBox(height: 14),
-            // Título
-            Text('🎟  LOTTERY COUPON',
-                style: TextStyle(color: cs.onSurface, fontSize: 15,
-                    fontWeight: FontWeight.bold, letterSpacing: 1.5)),
-            const SizedBox(height: 6),
-            // Descripción
-            Text(
-              widget.slot != null
-                  ? 'Redeeming for: ${widget.slot!.productName}'
-                  : 'Enter the code on your coupon to reveal your special price.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 12, height: 1.5),
-            ),
-            // Estado
-            if (_state == _LotteryState.validating) ...[
-              const SizedBox(height: 8),
-              Text('Validating…',
-                  style: TextStyle(color: primary,
-                      fontSize: 12, fontWeight: FontWeight.w600)),
-            ],
-            if (_state == _LotteryState.success) ...[
-              const SizedBox(height: 8),
-              const Text('✅  Code accepted!',
-                  style: TextStyle(color: Colors.greenAccent,
-                      fontSize: 12, fontWeight: FontWeight.w600)),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCenterAnimation({required ColorScheme cs, required Color primary}) {
-    switch (_state) {
-      case _LotteryState.validating:
-        return _SpinningWheel(controller: _spinCtrl);
-
-      case _LotteryState.success:
-        return FadeTransition(
-          opacity: _resultFade,
-          child: ScaleTransition(
-            scale: _resultScale,
-            child: Container(
-              width: 80, height: 80,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.green.withValues(alpha: 0.15),
-                border: Border.all(color: Colors.greenAccent, width: 2.5),
-              ),
-              child: const Center(
-                child: Icon(Icons.check_rounded, color: Colors.greenAccent, size: 40),
-              ),
-            ),
-          ),
-        );
-
-      case _LotteryState.error:
-        return Container(
-          width: 80, height: 80,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.red.withValues(alpha: 0.1),
-            border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5), width: 2),
-          ),
-          child: const Center(
-            child: Icon(Icons.close_rounded, color: Colors.redAccent, size: 36),
-          ),
-        );
-
-      case _LotteryState.idle:
-        return Container(
-          width: 80, height: 80,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(
-              colors: [
-                primary.withValues(alpha: 0.3),
-                primary.withValues(alpha: 0.05),
-              ],
-            ),
-            border: Border.all(
-                color: primary.withValues(alpha: 0.4), width: 2),
-          ),
-          child: const Center(
-            child: Text('🎟', style: TextStyle(fontSize: 36)),
-          ),
-        );
-    }
-  }
-
-  // ── Panel inferior (formulario) ──────────────────────────────────────────
-
-  Widget _buildBottomPanel({required ColorScheme cs, required Color bg, required Color primary}) {
-    return Container(
-      color: bg,
-      child: Center(
-        child: SizedBox(
-          width: 520, // ancho máximo — centrado en pantalla
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Input
-                _buildCodeInput(cs: cs, primary: primary),
-                if (_state == _LotteryState.error) ...[
-                  const SizedBox(height: 8),
-                  _buildErrorMsg(cs: cs, primary: primary),
-                ],
-                const SizedBox(height: 12),
-                // Botón
-                SizedBox(width: double.infinity, height: 48,
-                    child: _buildValidateButton(cs: cs, primary: primary)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCodeInput({required ColorScheme cs, required Color primary}) {
-    final enabled = _state == _LotteryState.idle || _state == _LotteryState.error;
-    return Container(
+      height: scale * 0.12,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: _state == _LotteryState.error
-              ? Colors.redAccent.withValues(alpha: 0.6)
-              : primary.withValues(alpha: 0.4),
-          width: 1.5,
-        ),
-        color: cs.surfaceContainerHighest,
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(4),
       ),
       child: TextField(
-        controller: _codeCtrl,
-        focusNode: _focusNode,
-        enabled: enabled,
-        autofocus: true,
+        controller: controller,
+        focusNode:  focusNode,
+        enabled:    enabled,
+        autofocus:  true,
         textCapitalization: TextCapitalization.characters,
+        textInputAction: TextInputAction.go,
         inputFormatters: [
-          UpperCaseTextFormatter(),
+          _UpperCase(),
           LengthLimitingTextInputFormatter(20),
         ],
         style: TextStyle(
-          color: cs.onSurface,
-          fontSize: 22,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 5,
-          fontFamily: 'monospace',
+          color: Colors.black,
+          fontSize: scale * 0.075,
+          fontWeight: FontWeight.w900,
+          letterSpacing: scale * 0.008,
         ),
         textAlign: TextAlign.center,
-        decoration: InputDecoration(
-          hintText: 'XXXXXX',
-          hintStyle: TextStyle(
-            color: cs.onSurface.withValues(alpha: 0.32),
-            fontSize: 22,
-            letterSpacing: 5,
-          ),
-          labelText: 'Enter lottery code',
-          labelStyle: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 14),
-          floatingLabelBehavior: FloatingLabelBehavior.never,
+        cursorColor: Colors.black,
+        decoration: const InputDecoration(
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          suffixIcon: _codeCtrl.text.isNotEmpty && enabled
-              ? IconButton(
-                  icon: Icon(Icons.clear_rounded, color: cs.onSurface.withValues(alpha: 0.48)),
-                  onPressed: () { _codeCtrl.clear(); setState(() {}); },
-                )
-              : null,
+          contentPadding: EdgeInsets.zero,
         ),
-        onChanged: (_) => setState(() {}),
-        onSubmitted: (_) { if (_canValidate) _validate(); },
-      ),
-    );
-  }
-
-  Widget _buildErrorMsg({required ColorScheme cs, required Color primary}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 16),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(_errorMsg,
-                style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
-          ),
-          TextButton(
-            onPressed: _resetToIdle,
-            child: Text('Try again',
-                style: TextStyle(color: primary, fontSize: 13)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildValidateButton({required ColorScheme cs, required Color primary}) {
-    final loading = _state == _LotteryState.validating;
-    final success = _state == _LotteryState.success;
-
-    return SizedBox(
-      width: double.infinity,
-      height: 60,
-      child: ElevatedButton(
-        onPressed: (_canValidate && !loading && !success) ? _validate : null,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: success
-              ? Colors.green
-              : (_canValidate ? primary : cs.onSurface.withValues(alpha: 0.12)),
-          foregroundColor: cs.onPrimary,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          elevation: _canValidate ? 6 : 0,
-        ),
-        child: loading
-            ? SizedBox(width: 24, height: 24,
-                child: CircularProgressIndicator(color: cs.onPrimary, strokeWidth: 2.5))
-            : success
-                ? const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.check_rounded, size: 22),
-                    SizedBox(width: 8),
-                    Text('Validated!', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  ])
-                : const Tooltip(
-                    message: 'Validate your lottery code',
-                    child: Text('VALIDATE CODE',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
-                  ),
+        onChanged:   onChanged,
+        onSubmitted: onSubmitted,
       ),
     );
   }
 }
 
-// ─── UpperCaseTextFormatter ───────────────────────────────────────────────────
-
-class UpperCaseTextFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-      TextEditingValue old, TextEditingValue value) {
-    return value.copyWith(text: value.text.toUpperCase());
-  }
-}
-
-// ─── _SpinningWheel ───────────────────────────────────────────────────────────
-
-/// Rueda giratoria mientras se valida el código.
-class _SpinningWheel extends StatelessWidget {
-  final AnimationController controller;
-  const _SpinningWheel({required this.controller});
+class _StatusLine extends StatelessWidget {
+  final _State state;
+  final String msg;
+  final double scale;
+  const _StatusLine({
+    required this.state,
+    required this.msg,
+    required this.scale,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (_, __) {
-        return Transform.rotate(
-          angle: controller.value * 2 * math.pi,
-          child: SizedBox(
-            width: 80, height: 80,
-            child: CustomPaint(painter: _WheelPainter()),
+    if (state == _State.validating) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: scale * 0.04, height: scale * 0.04,
+            child: const CircularProgressIndicator(
+                color: Colors.white, strokeWidth: 2),
           ),
-        );
-      },
-    );
+          SizedBox(width: scale * 0.025),
+          Text('Validating…',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: scale * 0.032,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1,
+              )),
+        ],
+      );
+    }
+    if (state == _State.error) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline_rounded,
+              color: Colors.redAccent, size: scale * 0.04),
+          SizedBox(width: scale * 0.02),
+          Flexible(
+            child: Text(
+              msg,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.redAccent,
+                fontSize: scale * 0.032,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return const SizedBox.shrink();
   }
 }
 
-class _WheelPainter extends CustomPainter {
-  static const _colors = [
-    Color(0xFFFFD700), Color(0xFF007ACC), Color(0xFF00C853),
-    Color(0xFFFF6B35), Color(0xFF9B59B6), Color(0xFFE74C3C),
-    Color(0xFF1ABC9C), Color(0xFFF39C12),
-  ];
-
+class _UpperCase extends TextInputFormatter {
   @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-    final sweepAngle = (2 * math.pi) / _colors.length;
-    final paint = Paint()..style = PaintingStyle.fill;
-
-    for (int i = 0; i < _colors.length; i++) {
-      paint.color = _colors[i];
-      canvas.drawArc(
-        Rect.fromCircle(center: center, radius: radius),
-        i * sweepAngle - math.pi / 2,
-        sweepAngle,
-        true,
-        paint,
-      );
-    }
-
-    // Centro blanco
-    paint.color = Colors.white;
-    canvas.drawCircle(center, radius * 0.28, paint);
-
-    // Texto central
-    final span = TextSpan(
-      text: '🎟',
-      style: TextStyle(fontSize: radius * 0.32),
-    );
-    final tp = TextPainter(text: span, textDirection: TextDirection.ltr);
-    tp.layout();
-    tp.paint(canvas, center - Offset(tp.width / 2, tp.height / 2));
+  TextEditingValue formatEditUpdate(TextEditingValue old, TextEditingValue v) {
+    return v.copyWith(text: v.text.toUpperCase());
   }
-
-  @override
-  bool shouldRepaint(_) => false;
 }

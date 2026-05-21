@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -7,31 +8,21 @@ import '../services/api_service.dart';
 import '../services/app_config.dart';
 import '../services/vending_machine_service.dart';
 
+/// Chevrolet / Detroit Tigers branded post-redemption screen.
+///
+/// Sized off MediaQuery so the layout scales from the dev preview up to
+/// the kiosk's 45" 1:2 portrait panel. No price card, no countdown — the
+/// promo is free, so we fire dispense on launch and jump straight to
+/// THANK YOU on success.
 class ResultScreen extends StatefulWidget {
   final String price;
   final String message;
-
-  /// Slot físico a dispensar (viene de la API de lotería).
   final int? lineNumber;
-
-  /// Número de serie de la máquina (trazabilidad).
   final String machineNo;
-
-  /// Código ganador (trazabilidad).
   final String lotteryCode;
-
-  /// Tier rolled client-side ("A" or "B") — empty when this isn't a
-  /// scratch-card flow. Used to call /scratch-card/confirm after dispense.
   final String tier;
-
-  /// Slot seleccionado por el usuario (para mostrar nombre del producto).
   final MachineSlot? slot;
-
-  /// Nombre del producto (fallback cuando slot es null — viene del lookup).
   final String? productName;
-
-  /// Si true, omite el ring de auto-compra y dispensa de inmediato.
-  /// Usar cuando el usuario ya tomó la decisión de comprar (Buy directo).
   final bool skipCountdown;
 
   const ResultScreen({
@@ -44,158 +35,49 @@ class ResultScreen extends StatefulWidget {
     this.tier = '',
     this.slot,
     this.productName,
-    this.skipCountdown = false,
+    this.skipCountdown = true,
   });
 
   @override
   State<ResultScreen> createState() => _ResultScreenState();
 }
 
-// Estados del flujo completo: precio → pago → despacho
-enum _FlowState { showingPrice, paying, dispensing, success, error }
+enum _Flow { dispensing, success, error, noSlot }
 
-class _ResultScreenState extends State<ResultScreen>
-    with TickerProviderStateMixin {
-  // ── Animaciones ───────────────────────────────────────────────────────────
-  late AnimationController _entryController;
-  late AnimationController _glowController;
-  late AnimationController _countdownController;
-
-  late Animation<double> _scaleAnim;
-  late Animation<double> _fadeAnim;
-  late Animation<double> _glowAnim;
-
-  bool _showPrice = false;
-
-  // ── Auto-compra: 10 s después de mostrar el precio ───────────────────────
-  //   Si _canClaim → cuenta atrás → _startPayment() automático.
-  //   El usuario puede cancelar durante esos 10 s.
-  static const int _autoBuySeconds = 10;
-  int _autoBuyRemaining = _autoBuySeconds;
-  bool _autoBuyActive = true;
-
-  // ── Estado del flujo ──────────────────────────────────────────────────────
-  _FlowState _state = _FlowState.showingPrice;
+class _ResultScreenState extends State<ResultScreen> {
+  _Flow _state = _Flow.dispensing;
   String _errorMsg = '';
-
-  bool get _canClaim => widget.lineNumber != null;
+  Timer? _returnTimer;
 
   @override
   void initState() {
     super.initState();
-
-    _entryController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
-    _scaleAnim = Tween<double>(begin: 0.5, end: 1.0).animate(
-      CurvedAnimation(parent: _entryController, curve: Curves.elasticOut),
-    );
-    _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _entryController, curve: Curves.easeIn),
-    );
-
-    _glowController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-    _glowAnim = Tween<double>(begin: 0.3, end: 0.8).animate(
-      CurvedAnimation(parent: _glowController, curve: Curves.easeInOut),
-    );
-
-    // Placeholder para _countdownController — se reemplaza en _startCountdown()
-    // Necesario porque AnimatedBuilder lo referencia antes del delayed de 300ms.
-    _countdownController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 1),
-    );
-
-    // Mostrar precio con animación de entrada
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (!mounted) return;
-      setState(() => _showPrice = true);
-      _entryController.forward();
-
-      if (widget.skipCountdown && _canClaim) {
-        // Compra directa: dispensa inmediatamente sin ring de cuenta atrás
-        Future.delayed(const Duration(milliseconds: 900), () {
-          if (mounted) _startPayment();
-        });
-      } else {
-        _startCountdown();
-      }
-    });
-  }
-
-  // ── Countdown ─────────────────────────────────────────────────────────────
-
-  void _startCountdown() {
-    // Reemplazar el placeholder por el controller real del auto-buy
-    _countdownController.dispose();
-    // _countdownController: barra de progreso del auto-buy (0 → 1 en 5 s)
-    _countdownController = AnimationController(
-      vsync: this,
-      duration: Duration(seconds: _autoBuySeconds),
-    )..addListener(() {
-        if (!_autoBuyActive) return;
-        final remaining = _autoBuySeconds -
-            (_countdownController.value * _autoBuySeconds).floor();
-        if (mounted && remaining != _autoBuyRemaining) {
-          setState(() => _autoBuyRemaining = remaining);
-        }
-      });
-
-    _countdownController.forward().then((_) {
-      if (mounted && _autoBuyActive) {
-        if (_canClaim) {
-          // ✅ Auto-arrancar compra cuando termina el contador
-          _startPayment();
-        } else {
-          Navigator.pop(context);
-        }
-      }
-    });
-  }
-
-  void _cancelAutoBuy() {
-    _autoBuyActive = false;
-    _countdownController.stop();
-  }
-
-  // ── Flujo de pago ─────────────────────────────────────────────────────────
-
-  Future<void> _startPayment() async {
-    if (_state != _FlowState.showingPrice) return;
-    _cancelAutoBuy();
-
-    // Lottery redemptions are free — skip the payment animation entirely
-    // and go straight to dispense.
-    if (widget.tier.isEmpty) {
-      SemanticsService.announce('Processing payment, please wait.', TextDirection.ltr);
-      setState(() => _state = _FlowState.paying);
-      await Future.delayed(const Duration(milliseconds: 2500));
-      if (!mounted) return;
+    if (widget.lineNumber == null) {
+      _state = _Flow.noSlot;
+      _returnTimer = Timer(const Duration(seconds: 4), _returnToIdle);
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _dispense());
     }
-
-    await _dispenseProduct();
   }
 
-  // ── Despacho ──────────────────────────────────────────────────────────────
+  @override
+  void dispose() {
+    _returnTimer?.cancel();
+    super.dispose();
+  }
 
-  Future<void> _dispenseProduct() async {
-    SemanticsService.announce('Dispensing your product, please wait.', TextDirection.ltr);
-    setState(() => _state = _FlowState.dispensing);
+  Future<void> _dispense() async {
+    SemanticsService.announce(
+        'Dispensing your item, please wait.', TextDirection.ltr);
 
     final result = await VendingMachineService.dispenseProduct(
-      lineNumber: widget.lineNumber!,
-      lotteryCode: widget.lotteryCode,
-      machineNo: widget.machineNo,
+      lineNumber:      widget.lineNumber!,
+      lotteryCode:     widget.lotteryCode,
+      machineNo:       widget.machineNo,
       simulateSuccess: AppConfig.simulateDispense,
-      onProgress: (_) {},
+      onProgress:      (_) {},
     );
 
-    // Report tier-specific outcome to the Ten Point Media redemption record.
-    // Only fires for scratch-card flows (tier is non-empty there).
     if (widget.tier.isNotEmpty && widget.lotteryCode.isNotEmpty) {
       unawaited(ApiService.confirmScratchCard(
         code:        widget.lotteryCode,
@@ -210,539 +92,308 @@ class _ResultScreenState extends State<ResultScreen>
     if (!mounted) return;
 
     if (result.status == DispenseStatus.success) {
-      SemanticsService.announce('Success! Please collect your product from the dispenser.', TextDirection.ltr);
-      setState(() => _state = _FlowState.success);
-      // Volver automáticamente al browser después de 5 s
-      Future.delayed(const Duration(seconds: 5), () {
-        if (mounted) Navigator.pop(context);
-      });
+      SemanticsService.announce(
+          'Thank you. Please collect your item below.', TextDirection.ltr);
+      setState(() => _state = _Flow.success);
+      _returnTimer = Timer(const Duration(seconds: 8), _returnToIdle);
     } else {
       setState(() {
-        _state = _FlowState.error;
+        _state = _Flow.error;
         _errorMsg = result.errorMessage ?? 'Unknown error';
       });
     }
   }
 
-  void _retryFromError() {
-    setState(() {
-      _state = _FlowState.showingPrice;
-      _autoBuyRemaining = _autoBuySeconds;
-      _autoBuyActive = true;
-    });
-    _startCountdown();
+  void _returnToIdle() {
+    if (!mounted) return;
+    Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
-  void _extendTime() {
-    _countdownController.stop();
-    _countdownController.reset();
-    setState(() { _autoBuyRemaining = 30; });
-    _startCountdown();
-    SemanticsService.announce(
-        'Time extended. You have 30 more seconds.', TextDirection.ltr);
+  void _retry() {
+    setState(() { _state = _Flow.dispensing; _errorMsg = ''; });
+    _dispense();
   }
-
-  @override
-  void dispose() {
-    _entryController.dispose();
-    _glowController.dispose();
-    _countdownController.dispose();
-    super.dispose();
-  }
-
-  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final cs      = Theme.of(context).colorScheme;
-    final bg      = Theme.of(context).scaffoldBackgroundColor;
-    final primary = cs.primary;
+    final size = MediaQuery.of(context).size;
+    final w = size.width;
+    final h = size.height;
+    // `scale` is the unit all fonts/icons/image sizes are computed from.
+    // Using min(w, h / 1.8) ensures widgets shrink when the screen is
+    // shorter than ideal (e.g. wider-than-tall browser windows) so the
+    // layout always fits. On the production 1:2 portrait kiosk
+    // (h ≈ 2w) this equals min(w, ~1.1w) ≈ w — sizes unaffected.
+    final scale = math.min(w, h / 1.8);
 
     return Scaffold(
-      backgroundColor: bg,
-      body: Stack(
-        children: [
-          // Contenido principal
-          Center(
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // ── Cabecera ───────────────────────────────────────────
-                  _buildHeader(cs: cs),
-                  const SizedBox(height: 32),
-
-                  // ── Precio ganado (animado) ────────────────────────────
-                  if (_showPrice) _buildPriceCard(cs: cs, primary: primary),
-                  if (!_showPrice)
-                    CircularProgressIndicator(color: primary),
-
-                  const SizedBox(height: 36),
-
-                  // ── Sección de acción según estado ─────────────────────
-                  // AnimatedBuilder para que el ring del auto-buy se mueva suave
-                  AnimatedBuilder(
-                    animation: _countdownController,
-                    builder: (_, __) => _buildActionSection(cs: cs, primary: primary),
-                  ),
-                ],
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Positioned(
+              top: 0, left: 0, width: 60, height: 60,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _returnToIdle,
+                child: const SizedBox.expand(),
               ),
             ),
-          ),
-
-          // Logo pequeño + nombre del producto
-          Positioned(
-            top: 20,
-            left: 90,
-            child: Row(
-              children: [
-                Icon(Icons.storefront, color: primary, size: 24),
-                const SizedBox(width: 8),
-                Text(
-                  widget.slot?.productName ?? widget.productName ?? 'VMFS USA',
-                  style: TextStyle(
-                    color: cs.onSurface.withValues(alpha: 0.65),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1,
-                  ),
-                ),
-              ],
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: w * 0.05,
+                vertical:   h * 0.03,
+              ),
+              child: _buildBody(w, h, scale),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  // ── Cabecera ───────────────────────────────────────────────────────────────
-
-  Widget _buildHeader({required ColorScheme cs}) {
-    return Column(
-      children: [
-        Text(
-          '🎉  CONGRATULATIONS!',
-          style: TextStyle(
-            color: cs.onSurface,
-            fontSize: 30,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 3,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          widget.message,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-              color: cs.onSurface.withValues(alpha: 0.65), fontSize: 17, letterSpacing: 0.5),
-        ),
-      ],
-    );
-  }
-
-  // ── Tarjeta de precio ──────────────────────────────────────────────────────
-
-  Widget _buildPriceCard({required ColorScheme cs, required Color primary}) {
-    return FadeTransition(
-      opacity: _fadeAnim,
-      child: ScaleTransition(
-        scale: _scaleAnim,
-        child: AnimatedBuilder(
-          animation: _glowAnim,
-          builder: (_, child) => Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 60, vertical: 28),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: primary, width: 2),
-              boxShadow: [
-                BoxShadow(
-                  color: primary.withValues(alpha: _glowAnim.value),
-                  blurRadius: 60,
-                  spreadRadius: 10,
-                ),
-              ],
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  primary.withValues(alpha: 0.08),
-                  primary.withValues(alpha: 0.03),
-                ],
+  Widget _buildBody(double w, double h, double scale) {
+    switch (_state) {
+      case _Flow.dispensing:
+        return Column(
+          children: [
+            _ChevyTigersLockup(w: w, scale: scale),
+            const Spacer(),
+            SizedBox(
+              width: scale * 0.15, height: scale * 0.15,
+              child: const CircularProgressIndicator(
+                  color: Colors.white, strokeWidth: 4),
+            ),
+            SizedBox(height: scale * 0.03),
+            Text(
+              'DISPENSING YOUR ITEM…',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: scale * 0.065,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2,
               ),
             ),
-            child: child,
-          ),
-          child: Column(
-            children: [
-              Text(
-                'YOUR PRICE',
-                style: TextStyle(
-                  color: cs.onSurface.withValues(alpha: 0.48),
-                  fontSize: 13,
-                  letterSpacing: 4,
-                  fontWeight: FontWeight.w500,
-                ),
+            SizedBox(height: scale * 0.015),
+            Text(
+              widget.productName ?? widget.slot?.productName ?? '',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: scale * 0.04,
               ),
-              const SizedBox(height: 8),
-              Text(
-                '\$${widget.price}',
+            ),
+            const Spacer(),
+          ],
+        );
+
+      case _Flow.success:
+        return Column(
+          children: [
+            _ChevyTigersLockup(w: w, scale: scale),
+            const Spacer(),
+            // HUGE thank you. FittedBox prevents overflow on narrow widths.
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                'THANK YOU!',
+                textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: cs.onSurface,
-                  fontSize: 76,
-                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  fontSize: scale * 0.18,
+                  fontWeight: FontWeight.w900,
                   letterSpacing: 2,
                   height: 1,
                 ),
               ),
-              // Mostrar nombre del producto (slot o fallback del lookup)
-              if (widget.slot != null || widget.productName != null) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'for ${widget.slot?.productName ?? widget.productName}',
-                  style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 14),
+            ),
+            const Spacer(),
+            // Three-line collect message — matches the design layout.
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                'PLEASE\nCOLLECT YOUR\nITEM BELOW',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: scale * 0.105,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                  height: 1.05,
                 ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Sección de acciones ────────────────────────────────────────────────────
-
-  Widget _buildActionSection({required ColorScheme cs, required Color primary}) {
-    switch (_state) {
-      // ── 1. Precio ganado → auto-compra en 5 s ─────────────────────────
-      case _FlowState.showingPrice:
-        if (_canClaim) {
-          // Tiene slot asignado → mostrar ring de auto-compra
-          return Column(
-            children: [
-              // Ring countdown + label central
-              _AutoBuyRing(
-                progress: _countdownController.value,
-                secondsLeft: _autoBuyRemaining,
-                price: widget.price,
-                cs: cs,
-                onCancel: () {
-                  _cancelAutoBuy();
-                  Navigator.pop(context);
-                },
-                onBuyNow: _startPayment,
-                onNeedMoreTime: _extendTime,
               ),
-            ],
-          );
-        }
-        // Sin lineNumber → solo mostrar precio y volver
-        return Column(
-          children: [
+            ),
+            SizedBox(height: scale * 0.04),
             Text(
-              'No product slot assigned',
-              style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 14),
+              'Returning to home in a few seconds…',
+              style: TextStyle(color: Colors.white38, fontSize: scale * 0.028),
             ),
-            const SizedBox(height: 16),
-            TextButton.icon(
-              onPressed: () => Navigator.pop(context),
-              icon: Icon(Icons.arrow_back_rounded,
-                  color: cs.onSurface.withValues(alpha: 0.65), size: 18),
-              label: Text(
-                'Back to menu',
-                style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 15),
-              ),
-            ),
+            SizedBox(height: scale * 0.01),
           ],
         );
 
-      // ── 2. Procesando pago ─────────────────────────────────────────────
-      case _FlowState.paying:
-        return _StatusCard(
-          icon: SizedBox(
-            width: 42,
-            height: 42,
-            child: CircularProgressIndicator(color: primary, strokeWidth: 3),
-          ),
-          label: 'Processing payment…',
-          sublabel: 'Please wait, do not remove your card',
-          color: primary,
-          cs: cs,
-        );
-
-      // ── 3. Despachando producto ────────────────────────────────────────
-      case _FlowState.dispensing:
-        return _StatusCard(
-          icon: const SizedBox(
-            width: 42,
-            height: 42,
-            child: CircularProgressIndicator(
-                color: Colors.greenAccent, strokeWidth: 3),
-          ),
-          label: 'Dispensing your product!',
-          sublabel: 'The machine is preparing your item…',
-          color: Colors.greenAccent,
-          cs: cs,
-        );
-
-      // ── 4. Éxito ───────────────────────────────────────────────────────
-      case _FlowState.success:
-        return _StatusCard(
-          icon: const Icon(Icons.check_circle_rounded,
-              color: Colors.greenAccent, size: 54),
-          label: 'Enjoy your product! 🎉',
-          sublabel: 'Please collect it from the dispenser slot',
-          color: Colors.greenAccent,
-          cs: cs,
-          extra: Padding(
-            padding: const EdgeInsets.only(top: 10),
-            child: Text(
-              'Returning to menu in 5 seconds…',
-              style: TextStyle(color: cs.onSurface.withValues(alpha: 0.48), fontSize: 12),
-            ),
-          ),
-        );
-
-      // ── 5. Error ───────────────────────────────────────────────────────
-      case _FlowState.error:
+      case _Flow.error:
         return Column(
           children: [
-            _StatusCard(
-              icon: const Icon(Icons.error_outline_rounded,
-                  color: Colors.redAccent, size: 54),
-              label: 'Something went wrong',
-              sublabel: _errorMsg,
-              color: Colors.redAccent,
-              cs: cs,
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton.icon(
-              onPressed: _retryFromError,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Try again',
-                  style:
-                      TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primary,
-                foregroundColor: cs.onPrimary,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 36, vertical: 16),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(50)),
+            _ChevyTigersLockup(w: w, scale: scale),
+            const Spacer(),
+            Icon(Icons.error_outline_rounded,
+                color: Colors.redAccent, size: scale * 0.2),
+            SizedBox(height: scale * 0.02),
+            Text(
+              'DISPENSE FAILED',
+              style: TextStyle(
+                color: Colors.redAccent,
+                fontSize: scale * 0.075,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2,
               ),
             ),
+            SizedBox(height: scale * 0.02),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: w * 0.05),
+              child: Text(
+                _errorMsg,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white70, fontSize: scale * 0.04),
+              ),
+            ),
+            SizedBox(height: scale * 0.04),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _PromoButton(label: 'TRY AGAIN', onTap: _retry,
+                    primary: true, scale: scale),
+                SizedBox(width: scale * 0.04),
+                _PromoButton(label: 'HOME', onTap: _returnToIdle,
+                    primary: false, scale: scale),
+              ],
+            ),
+            const Spacer(),
+          ],
+        );
+
+      case _Flow.noSlot:
+        return Column(
+          children: [
+            _ChevyTigersLockup(w: w, scale: scale),
+            const Spacer(),
+            Icon(Icons.warning_amber_rounded,
+                color: const Color(0xFFFFC107), size: scale * 0.2),
+            SizedBox(height: scale * 0.02),
+            Text(
+              'NO ITEM ASSIGNED',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: scale * 0.075,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2,
+              ),
+            ),
+            SizedBox(height: scale * 0.02),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: w * 0.06),
+              child: Text(
+                'Your code was accepted but no product is configured for it. '
+                'Please notify staff.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white70, fontSize: scale * 0.04),
+              ),
+            ),
+            const Spacer(),
+            Text(
+              'Returning to home…',
+              style: TextStyle(color: Colors.white38, fontSize: scale * 0.028),
+            ),
+            SizedBox(height: scale * 0.01),
           ],
         );
     }
   }
 }
 
-// ─── Widgets auxiliares ───────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
-/// Ring de cuenta atrás para auto-compra.
-///
-/// Muestra un círculo de progreso que se consume en [_autoBuySeconds] segundos.
-/// Al llegar a 0 el estado padre llama a [_startPayment] automáticamente.
-/// El usuario puede cancelar o adelantar la compra tocando "Buy Now".
-class _AutoBuyRing extends StatelessWidget {
-  final double progress;       // 0.0 → 1.0 (del AnimationController)
-  final int secondsLeft;
-  final String price;
-  final ColorScheme cs;
-  final VoidCallback onCancel;
-  final VoidCallback onBuyNow;
-  final VoidCallback onNeedMoreTime;
-
-  const _AutoBuyRing({
-    required this.progress,
-    required this.secondsLeft,
-    required this.price,
-    required this.cs,
-    required this.onCancel,
-    required this.onBuyNow,
-    required this.onNeedMoreTime,
-  });
+/// CHEVROLET | D combined lockup with "Official Vehicle of the Detroit Tigers"
+/// tagline. One image so the relative sizing of all three elements stays
+/// pixel-perfect. Height capped via `scale` so a wide logo never dominates
+/// on square / short screens.
+class _ChevyTigersLockup extends StatelessWidget {
+  final double w;
+  final double scale;
+  const _ChevyTigersLockup({required this.w, required this.scale});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // ── Ring con contador ────────────────────────────────────────────
-        SizedBox(
-          width: 130,
-          height: 130,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Fondo del ring (gris)
-              const CircularProgressIndicator(
-                value: 1.0,
-                strokeWidth: 7,
-                color: Colors.white12,
-              ),
-              // Ring de progreso que se consume
-              CircularProgressIndicator(
-                value: 1.0 - progress,   // empieza lleno y se vacía
-                strokeWidth: 7,
-                color: const Color(0xFF00C853),
-                strokeCap: StrokeCap.round,
-              ),
-              // Segundos en el centro
-              Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '$secondsLeft',
-                      style: TextStyle(
-                        color: cs.onSurface,
-                        fontSize: 38,
-                        fontWeight: FontWeight.bold,
-                        height: 1,
-                      ),
-                    ),
-                    Text(
-                      's',
-                      style: TextStyle(color: cs.onSurface.withValues(alpha: 0.48), fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 14),
-
-        // ── Texto de estado ──────────────────────────────────────────────
-        Text(
-          'Purchasing \$$price automatically…',
-          style: TextStyle(
-            color: cs.onSurface.withValues(alpha: 0.65),
-            fontSize: 14,
-            letterSpacing: 0.5,
-          ),
-        ),
-
-        const SizedBox(height: 20),
-
-        // ── Botón "Buy Now" (adelantar compra) ───────────────────────────
-        Semantics(
-          label: 'Buy now for \$$price',
-          button: true,
-          child: GestureDetector(
-            onTap: onBuyNow,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 16),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF00C853), Color(0xFF00897B)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(50),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF00C853).withValues(alpha: 0.4),
-                    blurRadius: 24,
-                    spreadRadius: 3,
-                  ),
-                ],
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.bolt_rounded, color: Colors.white, size: 22),
-                  SizedBox(width: 8),
-                  Text(
-                    'Buy Now',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                ],
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: scale * 0.22),
+      child: Padding(
+        padding: EdgeInsets.only(top: scale * 0.01, bottom: scale * 0.02),
+        child: Image.asset(
+          'assets/images/chevrolet_tigers_lockup.png',
+          width: w * 0.7,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => Container(
+            padding: EdgeInsets.all(scale * 0.03),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.white24),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              'Save to:\nassets/images/chevrolet_tigers_lockup.png',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: scale * 0.03,
+                fontFamily: 'monospace',
               ),
             ),
           ),
         ),
-
-        const SizedBox(height: 14),
-
-        // ── Cancelar ─────────────────────────────────────────────────────
-        TextButton.icon(
-          onPressed: onCancel,
-          icon: Icon(Icons.close_rounded, color: cs.onSurface.withValues(alpha: 0.48), size: 16),
-          label: Text(
-            'Cancel',
-            style: TextStyle(color: cs.onSurface.withValues(alpha: 0.48), fontSize: 14),
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextButton.icon(
-          onPressed: onNeedMoreTime,
-          icon: Icon(Icons.more_time_rounded, color: cs.primary, size: 16),
-          label: Text('Need more time?',
-              style: TextStyle(color: cs.primary, fontSize: 13)),
-        ),
-      ],
+      ),
     );
   }
 }
 
-/// Tarjeta de estado (loading / success / error).
-class _StatusCard extends StatelessWidget {
-  final Widget icon;
+class _PromoButton extends StatelessWidget {
   final String label;
-  final String sublabel;
-  final Color color;
-  final ColorScheme cs;
-  final Widget? extra;
-
-  const _StatusCard({
-    required this.icon,
+  final VoidCallback onTap;
+  final bool primary;
+  final double scale;
+  const _PromoButton({
     required this.label,
-    required this.sublabel,
-    required this.color,
-    required this.cs,
-    this.extra,
+    required this.onTap,
+    required this.primary,
+    required this.scale,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 40),
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-            color: color.withValues(alpha: 0.4), width: 1.5),
-        color: color.withValues(alpha: 0.05),
-      ),
-      child: Column(
-        children: [
-          SizedBox(width: 54, height: 54, child: Center(child: icon)),
-          const SizedBox(height: 16),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: color,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
+    final bg = primary ? const Color(0xFFFFC107) : Colors.transparent;
+    final fg = primary ? Colors.black : Colors.white;
+    return SizedBox(
+      width:  scale * 0.4,
+      height: scale * 0.11,
+      child: ElevatedButton(
+        onPressed: onTap,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: bg,
+          foregroundColor: fg,
+          side: primary
+              ? null
+              : const BorderSide(color: Colors.white54, width: 1.5),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: scale * 0.045,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 3,
           ),
-          const SizedBox(height: 6),
-          Text(
-            sublabel,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 14),
-          ),
-          if (extra != null) extra!,
-        ],
+        ),
       ),
     );
   }

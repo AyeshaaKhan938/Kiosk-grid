@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/app_config.dart';
 import '../services/reyeah_service.dart';
-import 'product_browser_screen.dart';
+import 'idle_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VMFS Setup Wizard — aparece una sola vez al instalar la app.
@@ -122,7 +122,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
     } else {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const ProductBrowserScreen()),
+        MaterialPageRoute(builder: (_) => const IdleScreen()),
       );
     }
   }
