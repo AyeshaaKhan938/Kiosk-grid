@@ -12,13 +12,15 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // .env is optional — the file is gitignored and may be absent on CI
-  // builds or fresh clones. When it isn't present, AppConfig falls back
-  // to the production constants baked into app_config.dart, so the app
-  // still launches with valid credentials.
+  // builds, web targets, or fresh clones. When the load throws we still
+  // need to initialize the dotenv instance so that later `dotenv.env[...]`
+  // reads return null instead of throwing NotInitializedError, letting
+  // AppConfig fall through to the production constants baked into
+  // app_config.dart.
   try {
     await dotenv.load(fileName: '.env');
   } catch (_) {
-    // No .env on disk — proceed with baked defaults.
+    dotenv.testLoad(fileInput: '');
   }
   await AppConfig.init();
 
