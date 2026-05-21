@@ -104,11 +104,12 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
           builder: (ctx, constraints) {
             final w = constraints.maxWidth;
             final h = constraints.maxHeight;
-            // `scale` decouples font/icon sizing from aspect ratio. Using
-            // min(w,h) keeps text the same physical size on 1:1, 1:2
-            // portrait, and landscape — only spacings adapt to screen
-            // shape.
-            final scale = math.min(w, h);
+            // `scale` is the unit all fonts/icons/image sizes are computed
+            // from. We use min(w, h / 1.8) so on a wider-but-not-taller
+            // screen (where h is the bottleneck) widgets shrink and
+            // everything still fits. On the production 1:2 portrait
+            // kiosk (h ≈ 2w) min(w, h/1.8) ≈ w, so sizes are unaffected.
+            final scale = math.min(w, h / 1.8);
 
             return Stack(
               children: [
@@ -208,20 +209,25 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
                             // Flexible space above the paw.
                             const Spacer(),
 
-                            // Tiger paw QR — FIXED size in scale units so
-                            // it never collapses. OverflowBox lets the
-                            // image visually extend past the right edge of
-                            // its slot without being clipped (the "coming
-                            // in from outside" feel).
+                            // Tiger paw QR — fixed size in scale units so
+                            // it never collapses. The image is composed
+                            // QR-on-left, tiger-arm-on-right, so we
+                            // center-align it in the slot and translate
+                            // RIGHT by about a quarter of the image's
+                            // width — that pushes the QR (which sits at
+                            // image_left ≈ 25%) onto the screen's
+                            // horizontal center, while the arm extends
+                            // off-screen to the right. OverflowBox lets
+                            // the arm overflow without being clipped.
                             SizedBox(
                               width:  double.infinity,
                               height: scale * 0.32,
                               child: OverflowBox(
                                 minWidth:  0,
                                 maxWidth:  double.infinity,
-                                alignment: Alignment.centerRight,
+                                alignment: Alignment.center,
                                 child: Transform.translate(
-                                  offset: Offset(scale * 0.08, 0),
+                                  offset: Offset(scale * 0.16, 0),
                                   child: Image.asset(
                                     'assets/images/tiger_paw_qr.png',
                                     height: scale * 0.32,

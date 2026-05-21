@@ -119,10 +119,12 @@ class _ResultScreenState extends State<ResultScreen> {
     final size = MediaQuery.of(context).size;
     final w = size.width;
     final h = size.height;
-    // `scale` decouples font/icon sizing from aspect ratio. Using min(w,h)
-    // keeps text the same physical size on 1:1, 1:2 portrait, and even
-    // landscape — only spacings adapt to screen shape.
-    final scale = math.min(w, h);
+    // `scale` is the unit all fonts/icons/image sizes are computed from.
+    // Using min(w, h / 1.8) ensures widgets shrink when the screen is
+    // shorter than ideal (e.g. wider-than-tall browser windows) so the
+    // layout always fits. On the production 1:2 portrait kiosk
+    // (h ≈ 2w) this equals min(w, ~1.1w) ≈ w — sizes unaffected.
+    final scale = math.min(w, h / 1.8);
 
     return Scaffold(
       backgroundColor: Colors.black,
