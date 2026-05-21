@@ -143,15 +143,6 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
 
             return Stack(
               children: [
-                // Hidden admin back-exit (top-left 60×60).
-                Positioned(
-                  top: 0, left: 0, width: 60, height: 60,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => Navigator.pop(context),
-                    child: const SizedBox.expand(),
-                  ),
-                ),
 
                 // SingleChildScrollView + ConstrainedBox(minHeight: h) +
                 // IntrinsicHeight gives us "fill the viewport, use Spacers
@@ -322,6 +313,18 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
                     ),
                   ),
                 ),
+
+                // Back-to-ads button — top-left corner, drawn on top of
+                // the scroll view so it's always reachable. Tap pops this
+                // route and returns the customer to the idle/ads screen.
+                Positioned(
+                  top:  scale * 0.02,
+                  left: scale * 0.03,
+                  child: _BackButton(
+                    scale: scale,
+                    onTap: () => Navigator.pop(context),
+                  ),
+                ),
               ],
             );
           },
@@ -488,6 +491,41 @@ class _StatusLine extends StatelessWidget {
       );
     }
     return const SizedBox.shrink();
+  }
+}
+
+class _BackButton extends StatelessWidget {
+  final double scale;
+  final VoidCallback onTap;
+  const _BackButton({required this.scale, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final size = scale * 0.11;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(size),
+        child: Container(
+          width:  size,
+          height: size,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.08),
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.35),
+              width: 1.5,
+            ),
+          ),
+          child: Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+            size: size * 0.45,
+          ),
+        ),
+      ),
+    );
   }
 }
 
