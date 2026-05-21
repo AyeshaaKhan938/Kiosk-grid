@@ -128,13 +128,29 @@ class UpdateService {
     final total = streamed.contentLength ?? info.sizeBytes ?? 0;
     final sink = file.openWrite();
     int received = 0;
-    await for (final chunk in streamed.stream) {
-      sink.add(chunk);
-      received += chunk.length;
-      onProgress?.call(received, total);
+    try {
+      // 25s stall timeout — if no bytes arrive for that long, abort
+      // instead of hanging the dialog indefinitely on a flaky link.
+      await for (final chunk
+          in streamed.stream.timeout(const Duration(seconds: 25))) {
+        sink.add(chunk);
+        received += chunk.length;
+        onProgress?.call(received, total);
+      }
+    } on TimeoutException {
+      await sink.close();
+      if (await file.exists()) await file.delete();
+      throw const UpdateException(
+          'Download stalled. Check the kiosk\'s internet connection and try again.');
     }
     await sink.flush();
     await sink.close();
+
+    if (total > 0 && received < total) {
+      if (await file.exists()) await file.delete();
+      throw UpdateException(
+          'Download incomplete ($received of $total bytes). Try again.');
+    }
 
     return file.path;
   }

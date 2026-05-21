@@ -3,6 +3,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../models/advertisement.dart';
 import '../services/advertisement_service.dart';
+import '../services/update_checker.dart';
+import '../services/update_service.dart';
 import 'admin_config_screen.dart';
 import 'lottery_code_screen.dart';
 
@@ -217,6 +219,25 @@ class _IdleScreenState extends State<IdleScreen>
                 behavior: HitTestBehavior.opaque,
                 onTap: _onSecretTap,
                 child: const SizedBox.expand(),
+              ),
+            ),
+
+            // Update-available badge — top-right, only visible when
+            // UpdateChecker has discovered a new APK. Tapping it opens
+            // the admin PIN flow so the operator can review/install.
+            Positioned(
+              top: 12, right: 12,
+              child: SafeArea(
+                child: ValueListenableBuilder<UpdateInfo?>(
+                  valueListenable: UpdateChecker.instance.notifier,
+                  builder: (_, info, __) {
+                    if (info == null) return const SizedBox.shrink();
+                    return _UpdateBadge(
+                      versionName: info.versionName,
+                      onTap: () => showAdminPinDialog(context),
+                    );
+                  },
+                ),
               ),
             ),
           ],
@@ -514,6 +535,57 @@ class _VmfsLogo extends StatelessWidget {
           fontWeight: FontWeight.bold,
           fontSize: 17,
           letterSpacing: 2.5,
+        ),
+      ),
+    );
+  }
+}
+
+/// Small "Update available — v X.X.X" pill shown on the idle screen when
+/// UpdateChecker has discovered a new APK. Tap routes through the admin
+/// PIN gate so customers can't trigger an install.
+class _UpdateBadge extends StatelessWidget {
+  final String versionName;
+  final VoidCallback onTap;
+  const _UpdateBadge({required this.versionName, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF388E3C).withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF388E3C).withValues(alpha: 0.5),
+                blurRadius: 14,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.system_update_rounded,
+                  color: Colors.white, size: 16),
+              const SizedBox(width: 8),
+              Text(
+                'Update available · v$versionName',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

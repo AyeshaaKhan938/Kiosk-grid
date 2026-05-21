@@ -5,6 +5,7 @@ import 'screens/idle_screen.dart';
 import 'screens/setup_wizard_screen.dart';
 import 'services/app_config.dart';
 import 'services/accessibility_settings.dart';
+import 'services/update_checker.dart';
 import 'widgets/accessibility_fab.dart';
 
 Future<void> main() async {
@@ -12,6 +13,10 @@ Future<void> main() async {
 
   await dotenv.load(fileName: '.env');
   await AppConfig.init();
+
+  // Quietly poll vms-cloud for new APK releases. The idle screen shows a
+  // discreet badge when one is ready.
+  UpdateChecker.instance.startBackgroundChecks();
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   SystemChrome.setPreferredOrientations([
