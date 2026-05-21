@@ -52,3 +52,12 @@ app.*.map.json
 
 # Local Claude Code permission state — not shared across machines.
 .claude/settings.local.json
+
+# Android release-signing material. NEVER commit these — losing the
+# keystore means no future APK can update existing installs, and
+# leaking it means anyone can ship malicious "updates" to live kiosks.
+# Codemagic gets its copy via the Code Signing Identity UI; local
+# release builds read android/key.properties.
+**/key.properties
+*.jks
+*.keystore
