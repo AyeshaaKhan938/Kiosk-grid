@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -12,15 +13,20 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // .env is optional — the file is gitignored and may be absent on CI
-  // builds, web targets, or fresh clones. When the load throws we still
-  // need to initialize the dotenv instance so that later `dotenv.env[...]`
-  // reads return null instead of throwing NotInitializedError, letting
-  // AppConfig fall through to the production constants baked into
-  // app_config.dart.
-  try {
-    await dotenv.load(fileName: '.env');
-  } catch (_) {
+  // builds, web targets, or fresh clones. On web we skip the load entirely
+  // because the file isn't bundled there and trying to fetch it just spams
+  // a noisy 404 in the console before throwing. Either way we initialize
+  // dotenv so later `dotenv.env[...]` reads return null instead of
+  // throwing NotInitializedError, and AppConfig falls through to the
+  // production constants baked into app_config.dart.
+  if (kIsWeb) {
     dotenv.testLoad(fileInput: '');
+  } else {
+    try {
+      await dotenv.load(fileName: '.env');
+    } catch (_) {
+      dotenv.testLoad(fileInput: '');
+    }
   }
   await AppConfig.init();
 
