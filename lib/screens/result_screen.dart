@@ -9,27 +9,19 @@ import '../services/vending_machine_service.dart';
 
 /// Chevrolet / Detroit Tigers branded post-redemption screen.
 ///
-/// On launch we immediately fire the dispense command for [lineNumber]
-/// (no price, no countdown — the promo is free). On success we display
-/// the THANK YOU + PLEASE COLLECT YOUR ITEM BELOW layout from the
-/// Chevy promo. On error we show a simple retry panel.
+/// Sized off MediaQuery so the layout scales from the dev preview up to
+/// the kiosk's 45" 1:2 portrait panel. No price card, no countdown — the
+/// promo is free, so we fire dispense on launch and jump straight to
+/// THANK YOU on success.
 class ResultScreen extends StatefulWidget {
-  /// Kept for API compatibility with callers. Not shown on the Chevy promo.
   final String price;
   final String message;
-
-  /// Physical slot to dispense from (from the lottery API).
   final int? lineNumber;
   final String machineNo;
   final String lotteryCode;
-
-  /// Tier rolled client-side ("A" or "B"). Empty when not a scratch-card flow.
   final String tier;
-
   final MachineSlot? slot;
   final String? productName;
-
-  /// Kept for API compatibility. The Chevy flow always skips countdown.
   final bool skipCountdown;
 
   const ResultScreen({
@@ -63,7 +55,6 @@ class _ResultScreenState extends State<ResultScreen> {
       _state = _Flow.noSlot;
       _returnTimer = Timer(const Duration(seconds: 4), _returnToIdle);
     } else {
-      // Fire the dispense as soon as the screen is on-screen.
       WidgetsBinding.instance.addPostFrameCallback((_) => _dispense());
     }
   }
@@ -86,7 +77,6 @@ class _ResultScreenState extends State<ResultScreen> {
       onProgress:      (_) {},
     );
 
-    // Report outcome to Ten Point Media when this is a scratch-card flow.
     if (widget.tier.isNotEmpty && widget.lotteryCode.isNotEmpty) {
       unawaited(ApiService.confirmScratchCard(
         code:        widget.lotteryCode,
@@ -125,12 +115,15 @@ class _ResultScreenState extends State<ResultScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final w = size.width;
+    final h = size.height;
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
         child: Stack(
           children: [
-            // Top-left hidden tap to bail out (matches idle screen pattern).
             Positioned(
               top: 0, left: 0, width: 60, height: 60,
               child: GestureDetector(
@@ -140,8 +133,11 @@ class _ResultScreenState extends State<ResultScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-              child: _buildBody(),
+              padding: EdgeInsets.symmetric(
+                horizontal: w * 0.05,
+                vertical:   h * 0.03,
+              ),
+              child: _buildBody(w, h),
             ),
           ],
         ),
@@ -149,107 +145,117 @@ class _ResultScreenState extends State<ResultScreen> {
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(double w, double h) {
     switch (_state) {
       case _Flow.dispensing:
         return Column(
           children: [
-            const _ChevyTigersLockup(),
+            _ChevyTigersLockup(w: w, h: h),
             const Spacer(),
-            const SizedBox(
-              width: 56, height: 56,
-              child: CircularProgressIndicator(
-                  color: Colors.white, strokeWidth: 3),
+            SizedBox(
+              width: w * 0.15, height: w * 0.15,
+              child: const CircularProgressIndicator(
+                  color: Colors.white, strokeWidth: 4),
             ),
-            const SizedBox(height: 24),
-            const Text(
+            SizedBox(height: h * 0.03),
+            Text(
               'DISPENSING YOUR ITEM…',
-              style: TextStyle(color: Colors.white, fontSize: 26,
-                  fontWeight: FontWeight.w900, letterSpacing: 2),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: w * 0.065,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2,
+              ),
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: h * 0.015),
             Text(
               widget.productName ?? widget.slot?.productName ?? '',
-              style: const TextStyle(color: Colors.white54, fontSize: 16),
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: w * 0.04,
+              ),
             ),
             const Spacer(),
           ],
         );
 
       case _Flow.success:
-        return const Column(
+        return Column(
           children: [
-            _ChevyTigersLockup(),
-            Spacer(),
-            Text(
-              'THANK YOU!',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 84,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 2,
-                height: 1,
+            _ChevyTigersLockup(w: w, h: h),
+            const Spacer(),
+            // HUGE thank you
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                'THANK YOU!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: w * 0.18,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 2,
+                  height: 1,
+                ),
               ),
             ),
-            Spacer(),
+            const Spacer(),
+            // Three-line collect message — matches the design layout
             Text(
-              'PLEASE COLLECT YOUR\nITEM BELOW',
+              'PLEASE\nCOLLECT YOUR\nITEM BELOW',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 52,
+                fontSize: w * 0.105,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 1.5,
-                height: 1.1,
+                height: 1.05,
               ),
             ),
-            SizedBox(height: 32),
+            SizedBox(height: h * 0.04),
             Text(
               'Returning to home in a few seconds…',
-              style: TextStyle(color: Colors.white38, fontSize: 13),
+              style: TextStyle(color: Colors.white38, fontSize: w * 0.028),
             ),
-            SizedBox(height: 16),
+            SizedBox(height: h * 0.01),
           ],
         );
 
       case _Flow.error:
         return Column(
           children: [
-            const _ChevyTigersLockup(),
+            _ChevyTigersLockup(w: w, h: h),
             const Spacer(),
-            const Icon(Icons.error_outline_rounded,
-                color: Colors.redAccent, size: 72),
-            const SizedBox(height: 20),
-            const Text(
+            Icon(Icons.error_outline_rounded,
+                color: Colors.redAccent, size: w * 0.2),
+            SizedBox(height: h * 0.02),
+            Text(
               'DISPENSE FAILED',
-              style: TextStyle(color: Colors.redAccent, fontSize: 32,
-                  fontWeight: FontWeight.w900, letterSpacing: 2),
+              style: TextStyle(
+                color: Colors.redAccent,
+                fontSize: w * 0.075,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2,
+              ),
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: h * 0.02),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              padding: EdgeInsets.symmetric(horizontal: w * 0.05),
               child: Text(
                 _errorMsg,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white70, fontSize: 16),
+                style: TextStyle(color: Colors.white70, fontSize: w * 0.04),
               ),
             ),
-            const SizedBox(height: 32),
+            SizedBox(height: h * 0.04),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _PromoButton(
-                  label: 'TRY AGAIN',
-                  onTap:  _retry,
-                  primary: true,
-                ),
-                const SizedBox(width: 16),
-                _PromoButton(
-                  label: 'HOME',
-                  onTap: _returnToIdle,
-                  primary: false,
-                ),
+                _PromoButton(label: 'TRY AGAIN', onTap: _retry,
+                    primary: true, w: w, h: h),
+                SizedBox(width: w * 0.04),
+                _PromoButton(label: 'HOME', onTap: _returnToIdle,
+                    primary: false, w: w, h: h),
               ],
             ),
             const Spacer(),
@@ -257,35 +263,39 @@ class _ResultScreenState extends State<ResultScreen> {
         );
 
       case _Flow.noSlot:
-        return const Column(
+        return Column(
           children: [
-            _ChevyTigersLockup(),
-            Spacer(),
+            _ChevyTigersLockup(w: w, h: h),
+            const Spacer(),
             Icon(Icons.warning_amber_rounded,
-                color: Color(0xFFFFC107), size: 72),
-            SizedBox(height: 20),
+                color: const Color(0xFFFFC107), size: w * 0.2),
+            SizedBox(height: h * 0.02),
             Text(
               'NO ITEM ASSIGNED',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white, fontSize: 32,
-                  fontWeight: FontWeight.w900, letterSpacing: 2),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: w * 0.075,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2,
+              ),
             ),
-            SizedBox(height: 12),
+            SizedBox(height: h * 0.02),
             Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24),
+              padding: EdgeInsets.symmetric(horizontal: w * 0.06),
               child: Text(
                 'Your code was accepted but no product is configured for it. '
                 'Please notify staff.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white70, fontSize: 16),
+                style: TextStyle(color: Colors.white70, fontSize: w * 0.04),
               ),
             ),
-            Spacer(),
+            const Spacer(),
             Text(
               'Returning to home…',
-              style: TextStyle(color: Colors.white38, fontSize: 13),
+              style: TextStyle(color: Colors.white38, fontSize: w * 0.028),
             ),
-            SizedBox(height: 16),
+            SizedBox(height: h * 0.01),
           ],
         );
     }
@@ -293,33 +303,37 @@ class _ResultScreenState extends State<ResultScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Reusable building blocks
-// ─────────────────────────────────────────────────────────────────────────────
 
-/// The CHEVROLET | D combined logo with "Official Vehicle of the Detroit Tigers"
-/// tagline. Single image asset for cleanest rendering.
+/// CHEVROLET | D combined lockup with "Official Vehicle of the Detroit Tigers"
+/// tagline. One image so the relative sizing of all three elements stays
+/// pixel-perfect.
 class _ChevyTigersLockup extends StatelessWidget {
-  const _ChevyTigersLockup();
+  final double w;
+  final double h;
+  const _ChevyTigersLockup({required this.w, required this.h});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      padding: EdgeInsets.only(top: h * 0.01, bottom: h * 0.02),
       child: Image.asset(
         'assets/images/chevrolet_tigers_lockup.png',
-        height: 130,
+        width: w * 0.7,
         fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => Container(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(w * 0.03),
           decoration: BoxDecoration(
             border: Border.all(color: Colors.white24),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: const Text(
-            'Save image to:\nassets/images/chevrolet_tigers_lockup.png',
+          child: Text(
+            'Save to:\nassets/images/chevrolet_tigers_lockup.png',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white54, fontSize: 12,
-                fontFamily: 'monospace'),
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: w * 0.025,
+              fontFamily: 'monospace',
+            ),
           ),
         ),
       ),
@@ -331,10 +345,14 @@ class _PromoButton extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   final bool primary;
+  final double w;
+  final double h;
   const _PromoButton({
     required this.label,
     required this.onTap,
     required this.primary,
+    required this.w,
+    required this.h,
   });
 
   @override
@@ -342,7 +360,8 @@ class _PromoButton extends StatelessWidget {
     final bg = primary ? const Color(0xFFFFC107) : Colors.transparent;
     final fg = primary ? Colors.black : Colors.white;
     return SizedBox(
-      width: 180, height: 56,
+      width:  w * 0.32,
+      height: h * 0.07,
       child: ElevatedButton(
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
@@ -357,8 +376,8 @@ class _PromoButton extends StatelessWidget {
         ),
         child: Text(
           label,
-          style: const TextStyle(
-            fontSize: 18,
+          style: TextStyle(
+            fontSize: w * 0.045,
             fontWeight: FontWeight.w900,
             letterSpacing: 3,
           ),
