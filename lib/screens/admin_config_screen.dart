@@ -1152,6 +1152,14 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     Navigator.of(context, rootNavigator: true).pop();
     progressController.dispose();
 
+    // CRITICAL: Lock Task Mode (screen pinning) blocks intents to other
+    // packages — including Android's PackageInstaller. Without this step
+    // the install dialog never appears and the user sees nothing happen
+    // after the download completes. Drop out of pinning *before* firing
+    // the install intent; onResume() will re-pin automatically when the
+    // installer dialog closes or the app relaunches with the new APK.
+    await KioskLockdown.exitKioskMode();
+
     final launched = await UpdateService.installApk(path);
     if (!mounted) return;
     if (!launched) {
