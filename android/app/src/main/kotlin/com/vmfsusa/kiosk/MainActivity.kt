@@ -7,7 +7,6 @@ import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
-import androidx.activity.OnBackPressedCallback
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -28,7 +27,9 @@ import io.flutter.plugin.common.MethodChannel
  *   4. Re-arm immersive + pinning on every focus change. If anything in
  *      Android tries to show the system UI (a permission dialog, an A11y
  *      toast, etc.) we yank it back down the instant focus returns.
- *   5. Back button intercepted at the activity level — never closes the app.
+ *   5. Back / Home / Recents / Menu key events consumed in dispatchKeyEvent
+ *      so neither Android nor Flutter ever sees them — the app can't be
+ *      backed out of.
  *   6. SHOW_WHEN_LOCKED + KEEP_SCREEN_ON flags — the kiosk wakes itself even
  *      from the lock screen and stays awake.
  *
@@ -55,7 +56,6 @@ class MainActivity : FlutterActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         applyImmersive()
-        blockBackButton()
     }
 
     override fun onResume() {
@@ -128,24 +128,10 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Intercept the system Back button at the activity level. The Flutter
-     * navigator can still pop screens within the app, but Back will never
-     * exit the app.
-     */
-    private fun blockBackButton() {
-        onBackPressedDispatcher.addCallback(
-            this,
-            object : OnBackPressedCallback(true) {
-                override fun handleOnBackPressed() {
-                    // No-op. Customer cannot back out of the app.
-                }
-            },
-        )
-    }
-
-    /**
-     * Also block the hardware Back key if some custom ROM bypasses the
-     * standard onBackPressed dispatcher (some tablets do).
+     * Block the hardware Back / Home / Recents / Menu keys at the lowest
+     * level. Consuming them here means Android never dispatches them to
+     * the rest of the activity, so the Flutter side never sees them and
+     * the customer can't back out of the app.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         return when (event.keyCode) {
