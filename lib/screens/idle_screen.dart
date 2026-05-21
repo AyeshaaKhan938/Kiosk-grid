@@ -278,14 +278,6 @@ class _IdleScreenState extends State<IdleScreen>
               ),
             ),
 
-            // ── Logo VMFS ─────────────────────────────────────────────────
-            Positioned(
-              top: 20, left: 90,
-              child: SafeArea(
-                child: _VmfsLogo(),
-              ),
-            ),
-
             // ── Texto animado del slide actual ────────────────────────────
             if (useDemo)
               Positioned(
@@ -508,37 +500,6 @@ class _BackendAdWidget extends StatelessWidget {
           style: const TextStyle(color: Colors.white38, fontSize: 20)),
     ),
   );
-}
-
-// ─── VMFS Logo ────────────────────────────────────────────────────────────────
-
-class _VmfsLogo extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFF007ACC),
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF007ACC).withValues(alpha: 0.55),
-            blurRadius: 20,
-            spreadRadius: 3,
-          ),
-        ],
-      ),
-      child: const Text(
-        'VMFS USA',
-        style: TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 17,
-          letterSpacing: 2.5,
-        ),
-      ),
-    );
-  }
 }
 
 /// Small "Update available — v X.X.X" pill shown on the idle screen when
