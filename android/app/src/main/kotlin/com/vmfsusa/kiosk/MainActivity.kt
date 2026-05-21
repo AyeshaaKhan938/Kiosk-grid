@@ -2,6 +2,7 @@ package com.vmfsusa.kiosk
 
 import android.app.ActivityManager
 import android.content.Context
+import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
@@ -21,8 +22,12 @@ import io.flutter.plugin.common.MethodChannel
  *
  *   1. HOME launcher category in the manifest — home button stays in the app.
  *   2. Aggressive immersive mode — the status bar and navigation bar are
- *      never rendered. Back / Home / Recents buttons are physically hidden;
- *      transient swipe-to-reveal is suppressed.
+ *      never rendered. Back / Home / Recents buttons are physically hidden.
+ *      We also tell Android (10+) that the app owns every screen edge via
+ *      `systemGestureExclusionRects`, which suppresses the OS's
+ *      swipe-from-edge gesture detection inside the rect. If a swipe
+ *      still leaks through (corners are always reserved by the OS), a
+ *      visibility-change listener re-hides the bars on the next frame.
  *   3. Lock Task Mode (screen pinning) on every resume.
  *   4. Re-arm immersive + pinning on every focus change. If anything in
  *      Android tries to show the system UI (a permission dialog, an A11y
@@ -75,10 +80,12 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Permanently hide the status + navigation bars. The
-     * `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE` flag suppresses the
-     * temporary peek-down when the user swipes — they stay hidden until
-     * we explicitly show them.
+     * Aggressively hide the status + navigation bars and tell Android we
+     * own every screen edge so the system gesture handles don't react to
+     * bottom / side swipes. On non-Device-Owner installs Android still
+     * reserves the swipe-from-bottom gesture as a safety mechanism, so
+     * the bars may flash briefly — the re-hide listener below kills the
+     * flash within ~50 ms of it appearing.
      */
     private fun applyImmersive() {
         val controller = WindowInsetsControllerCompat(window, window.decorView)
@@ -87,7 +94,7 @@ class MainActivity : FlutterActivity() {
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
         // Legacy flag set for older Android — overlaps with the controller
-        // above but causes no harm and covers edge cases on some OEM ROMs.
+        // above but covers edge cases on some OEM ROMs.
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE
@@ -98,12 +105,35 @@ class MainActivity : FlutterActivity() {
                 or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
             )
 
-        // Re-listen for any unexpected visibility change and immediately
-        // re-hide. This catches programmatic shows we didn't initiate.
+        // Tell Android 10+ that our app owns every pixel of every screen
+        // edge. The OS will suppress its own swipe-from-edge gesture
+        // detection inside these rects — so swiping up from the bottom no
+        // longer pops the nav bar on gesture-nav devices. (Note: the OS
+        // still keeps a tiny mandatory exclusion at the very corners for
+        // accessibility; full edge-to-edge blocking needs Device Owner.)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.decorView.post {
+                val w = window.decorView.width
+                val h = window.decorView.height
+                if (w > 0 && h > 0) {
+                    window.decorView.systemGestureExclusionRects =
+                        listOf(Rect(0, 0, w, h))
+                }
+            }
+        }
+
+        // Aggressive re-hide listener: the instant the OS reveals the
+        // bars (transient swipe-from-bottom on 3-button or gesture nav),
+        // we immediately request hide again. This kills the brief flash
+        // visually — there will be at most a single-frame appearance.
         @Suppress("DEPRECATION")
         window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
             if (visibility and View.SYSTEM_UI_FLAG_HIDE_NAVIGATION == 0) {
-                applyImmersive()
+                // Hide again on the next frame to dodge OS re-show races.
+                window.decorView.post {
+                    WindowInsetsControllerCompat(window, window.decorView)
+                        .hide(WindowInsetsCompat.Type.systemBars())
+                }
             }
         }
     }

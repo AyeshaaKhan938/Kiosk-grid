@@ -29,34 +29,33 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
   static const int _totalSteps = 3;
 
   // ── Datos del wizard ──────────────────────────────────────────────────────
-  // Modo de backend — por defecto vms-cloud para pruebas
-  String _backendMode  = 'vmscloud';
-  // vms-cloud — valores de prueba precargados (remover antes de producción)
-  String _apiBaseUrl       = 'https://vms-cloud.test/api/v1';
-  String _managementToken  = '01knvsyjyjadzxrs4ma4k2mabq';
-  String _machineNo        = '866903255700003';
-  // Reyeah Cloud (test credentials from API doc 2026-04-30)
-  String _vmBaseUrl    = 'https://api-testwm.reyeah.com';
-  String _vmAppId      = '86ebb48b-33b3-499c-b6eb-08354a998e58';
-  String _vmAppSecret  = '4322BF2FE80649476708DD59DE8B0B7F';
-  String _vmMachineNo  = '866902296600001';
-  // Común
-  String _adminPin     = '';
+  // Defaults are pulled from AppConfig in initState — on a fresh install
+  // that returns the production constants baked into app_config.dart, so
+  // the URL / token fields are pre-populated with the real prod values
+  // instead of a stale test URL. On re-config from the admin panel the
+  // previously-saved values flow through the same path.
+  late String _backendMode;
+  late String _apiBaseUrl;
+  late String _managementToken;
+  late String _machineNo;
+  late String _vmBaseUrl;
+  late String _vmAppId;
+  late String _vmAppSecret;
+  late String _vmMachineNo;
+  late String _adminPin;
 
   @override
   void initState() {
     super.initState();
-    if (widget.isEditing) {
-      _backendMode      = AppConfig.backendMode;
-      _apiBaseUrl       = AppConfig.apiBaseUrl;
-      _managementToken  = AppConfig.managementToken;
-      _machineNo        = AppConfig.machineNo;
-      _vmBaseUrl     = AppConfig.vmBaseUrl;
-      _vmAppId       = AppConfig.vmAppId;
-      _vmAppSecret   = AppConfig.vmAppSecret;
-      _vmMachineNo   = AppConfig.vmMachineNo;
-      _adminPin      = AppConfig.adminPin;
-    }
+    _backendMode     = AppConfig.backendMode;
+    _apiBaseUrl      = AppConfig.apiBaseUrl;
+    _managementToken = AppConfig.managementToken;
+    _machineNo       = AppConfig.machineNo;
+    _vmBaseUrl       = AppConfig.vmBaseUrl;
+    _vmAppId         = AppConfig.vmAppId;
+    _vmAppSecret     = AppConfig.vmAppSecret;
+    _vmMachineNo     = AppConfig.vmMachineNo;
+    _adminPin        = AppConfig.adminPin;
   }
 
   @override
