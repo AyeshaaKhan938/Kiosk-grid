@@ -209,28 +209,29 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
                             // Flexible space above the paw.
                             const Spacer(),
 
-                            // Tiger paw QR — fixed size in scale units so
-                            // it never collapses. The image is composed
-                            // QR-on-left, tiger-arm-on-right, so we
+                            // Tiger paw QR — sized big enough that the arm
+                            // visibly extends past the right edge of the
+                            // viewport. The image is composed
+                            // QR-on-left, tiger-arm-on-right; we
                             // center-align it in the slot and translate
-                            // RIGHT by about a quarter of the image's
-                            // width — that pushes the QR (which sits at
-                            // image_left ≈ 25%) onto the screen's
-                            // horizontal center, while the arm extends
-                            // off-screen to the right. OverflowBox lets
-                            // the arm overflow without being clipped.
+                            // right by ~1/4 of its own width so the QR
+                            // (which sits ~25% from the image's left
+                            // edge) lands at the screen's horizontal
+                            // center while the arm extends off-screen.
+                            // OverflowBox(maxWidth: ∞) lets that overflow
+                            // happen without being clipped.
                             SizedBox(
                               width:  double.infinity,
-                              height: scale * 0.32,
+                              height: scale * 0.42,
                               child: OverflowBox(
                                 minWidth:  0,
                                 maxWidth:  double.infinity,
                                 alignment: Alignment.center,
                                 child: Transform.translate(
-                                  offset: Offset(scale * 0.16, 0),
+                                  offset: Offset(scale * 0.22, 0),
                                   child: Image.asset(
                                     'assets/images/tiger_paw_qr.png',
-                                    height: scale * 0.32,
+                                    height: scale * 0.42,
                                     fit: BoxFit.contain,
                                     errorBuilder: (_, __, ___) => _missing(
                                         'tiger_paw_qr.png', scale),
