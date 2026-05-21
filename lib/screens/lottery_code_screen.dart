@@ -96,153 +96,197 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final w = size.width;
-    final h = size.height;
-    // `scale` decouples font/icon sizing from aspect ratio. Using min(w,h)
-    // keeps text the same physical size on 1:1, 1:2 portrait, and even
-    // landscape — only spacings adapt to the screen shape.
-    final scale = math.min(w, h);
-
     return Scaffold(
       backgroundColor: Colors.black,
       resizeToAvoidBottomInset: false,
       body: SafeArea(
-        child: Stack(
-          children: [
-            // Hidden admin back-exit (top-left 60×60).
-            Positioned(
-              top: 0, left: 0, width: 60, height: 60,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => Navigator.pop(context),
-                child: const SizedBox.expand(),
-              ),
-            ),
+        child: LayoutBuilder(
+          builder: (ctx, constraints) {
+            final w = constraints.maxWidth;
+            final h = constraints.maxHeight;
+            // `scale` decouples font/icon sizing from aspect ratio. Using
+            // min(w,h) keeps text the same physical size on 1:1, 1:2
+            // portrait, and landscape — only spacings adapt to screen
+            // shape.
+            final scale = math.min(w, h);
 
-            // ── Main layout ────────────────────────────────────────────
-            Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: w * 0.05,
-                vertical:   h * 0.02,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Header: wide CHEVROLET wordmark. Cap height so a wide
-                  // logo doesn't dominate on square / short screens.
-                  ConstrainedBox(
-                    constraints: BoxConstraints(maxHeight: scale * 0.18),
-                    child: Padding(
-                      padding: EdgeInsets.only(top: h * 0.005, bottom: h * 0.025),
-                      child: Image.asset(
-                        'assets/images/chevrolet_header_logo.png',
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => _missing(
-                            'chevrolet_header_logo.png', scale),
-                      ),
-                    ),
+            return Stack(
+              children: [
+                // Hidden admin back-exit (top-left 60×60).
+                Positioned(
+                  top: 0, left: 0, width: 60, height: 60,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => Navigator.pop(context),
+                    child: const SizedBox.expand(),
                   ),
+                ),
 
-                  // Centered instruction block, text left-aligned inside
-                  Align(
-                    alignment: Alignment.center,
-                    child: IntrinsicWidth(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _InstructionLine(num: '1.', verb: 'SCAN',
-                              rest: ' the QR code below', baseFont: scale * 0.05),
-                          SizedBox(height: scale * 0.008),
-                          _InstructionLine(num: '2.', verb: 'REGISTER',
-                              rest: ' with Chevy', baseFont: scale * 0.05),
-                          SizedBox(height: scale * 0.008),
-                          _InstructionLine(num: '3.', verb: 'ENTER',
-                              rest: ' your unique code below', baseFont: scale * 0.05),
-                          SizedBox(height: scale * 0.008),
-                          _InstructionLine(num: '4.', verb: 'COLLECT',
-                              rest: ' your item', baseFont: scale * 0.05),
-                          SizedBox(height: scale * 0.008),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.recycling_rounded,
-                                  color: Colors.white, size: scale * 0.055),
-                              SizedBox(width: scale * 0.02),
-                              Text('Recycle the box',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: scale * 0.05,
-                                    fontWeight: FontWeight.w500,
-                                  )),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                // SingleChildScrollView + ConstrainedBox(minHeight: h) +
+                // IntrinsicHeight gives us "fill the viewport, use Spacers
+                // to distribute extra space; if the intrinsic content is
+                // taller than the viewport (very square / very short
+                // screens), allow scrolling instead of clipping or
+                // disappearing widgets".
+                SingleChildScrollView(
+                  physics: const ClampingScrollPhysics(),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: h),
+                    child: IntrinsicHeight(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: w * 0.05,
+                          vertical:   h * 0.02,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // Header: wide CHEVROLET wordmark. Cap height
+                            // so a wide logo can't dominate on square /
+                            // short screens.
+                            ConstrainedBox(
+                              constraints:
+                                  BoxConstraints(maxHeight: scale * 0.15),
+                              child: Image.asset(
+                                'assets/images/chevrolet_header_logo.png',
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => _missing(
+                                    'chevrolet_header_logo.png', scale),
+                              ),
+                            ),
+                            SizedBox(height: scale * 0.03),
 
-                  // Tiger paw QR — fills whatever vertical space is left
-                  // after the other widgets claim their intrinsic heights.
-                  // No fixed height, so it shrinks on square screens and
-                  // grows on tall ones without ever overflowing.
-                  // Biased right and translated off the right edge so it
-                  // reads as "coming in from outside the screen".
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: Transform.translate(
-                        offset: Offset(w * 0.12, 0),
-                        child: Image.asset(
-                          'assets/images/tiger_paw_qr.png',
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => _missing(
-                              'tiger_paw_qr.png', scale),
+                            // Centered instruction block, text left-aligned
+                            // inside.
+                            Align(
+                              alignment: Alignment.center,
+                              child: IntrinsicWidth(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    _InstructionLine(
+                                        num: '1.', verb: 'SCAN',
+                                        rest: ' the QR code below',
+                                        baseFont: scale * 0.05),
+                                    SizedBox(height: scale * 0.008),
+                                    _InstructionLine(
+                                        num: '2.', verb: 'REGISTER',
+                                        rest: ' with Chevy',
+                                        baseFont: scale * 0.05),
+                                    SizedBox(height: scale * 0.008),
+                                    _InstructionLine(
+                                        num: '3.', verb: 'ENTER',
+                                        rest: ' your unique code below',
+                                        baseFont: scale * 0.05),
+                                    SizedBox(height: scale * 0.008),
+                                    _InstructionLine(
+                                        num: '4.', verb: 'COLLECT',
+                                        rest: ' your item',
+                                        baseFont: scale * 0.05),
+                                    SizedBox(height: scale * 0.008),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.recycling_rounded,
+                                            color: Colors.white,
+                                            size: scale * 0.055),
+                                        SizedBox(width: scale * 0.02),
+                                        Text('Recycle the box',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: scale * 0.05,
+                                              fontWeight: FontWeight.w500,
+                                            )),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                            // Flexible space above the paw.
+                            const Spacer(),
+
+                            // Tiger paw QR — FIXED size in scale units so
+                            // it never collapses. OverflowBox lets the
+                            // image visually extend past the right edge of
+                            // its slot without being clipped (the "coming
+                            // in from outside" feel).
+                            SizedBox(
+                              width:  double.infinity,
+                              height: scale * 0.32,
+                              child: OverflowBox(
+                                minWidth:  0,
+                                maxWidth:  double.infinity,
+                                alignment: Alignment.centerRight,
+                                child: Transform.translate(
+                                  offset: Offset(scale * 0.08, 0),
+                                  child: Image.asset(
+                                    'assets/images/tiger_paw_qr.png',
+                                    height: scale * 0.32,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) => _missing(
+                                        'tiger_paw_qr.png', scale),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            // Flexible space below the paw.
+                            const Spacer(),
+
+                            // Big bold prompt — two forced lines.
+                            Padding(
+                              padding: EdgeInsets.only(bottom: scale * 0.02),
+                              child: Text(
+                                'ENTER YOUR UNIQUE\nREDEMPTION CODE HERE:',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: scale * 0.07,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.1,
+                                  letterSpacing: 1.5,
+                                ),
+                              ),
+                            ),
+
+                            // White input field.
+                            _CodeInput(
+                              controller: _codeCtrl,
+                              focusNode:  _focusNode,
+                              enabled:    _state != _State.validating,
+                              scale:      scale,
+                              onChanged:  (_) => setState(() {
+                                if (_state == _State.error) {
+                                  _state = _State.idle;
+                                }
+                              }),
+                              onSubmitted: (_) {
+                                if (_canSubmit) _validate();
+                              },
+                            ),
+
+                            // Compact status / error line.
+                            SizedBox(
+                              height: scale * 0.07,
+                              child: Center(
+                                child: _StatusLine(
+                                    state: _state,
+                                    msg: _errorMsg,
+                                    scale: scale),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ),
-
-                  // Big bold prompt — two forced lines
-                  Padding(
-                    padding: EdgeInsets.only(bottom: h * 0.015),
-                    child: Text(
-                      'ENTER YOUR UNIQUE\nREDEMPTION CODE HERE:',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: scale * 0.07,
-                        fontWeight: FontWeight.w900,
-                        height: 1.1,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                  ),
-
-                  // White input field
-                  _CodeInput(
-                    controller: _codeCtrl,
-                    focusNode:  _focusNode,
-                    enabled:    _state != _State.validating,
-                    scale:      scale,
-                    onChanged:  (_) => setState(() {
-                      if (_state == _State.error) _state = _State.idle;
-                    }),
-                    onSubmitted: (_) { if (_canSubmit) _validate(); },
-                  ),
-
-                  // Compact status / error line (does NOT push layout)
-                  SizedBox(
-                    height: scale * 0.07,
-                    child: Center(
-                      child: _StatusLine(
-                          state: _state, msg: _errorMsg, scale: scale),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
