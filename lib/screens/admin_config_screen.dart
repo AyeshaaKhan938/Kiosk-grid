@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:usb_serial/usb_serial.dart';
 import '../services/app_config.dart';
@@ -531,72 +533,18 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
 
     if (slotNumber == null || !mounted) return;
 
-    showDialog(
+    // The new progress dialog manages its own lifecycle so it can:
+    //  - survive the multi-second UART round-trip without crashing the
+    //    admin route (the dialog state lives independently of the
+    //    in-flight future),
+    //  - show staged progress text ("Sending command" → "Motor turning"
+    //    → "Cooling down") instead of a single static placeholder,
+    //  - auto-dismiss back to the admin panel on success so the operator
+    //    lands on the same screen they came from.
+    await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            const Icon(Icons.local_shipping_rounded, color: Color(0xFF4CAF50)),
-            const SizedBox(width: 10),
-            Text('Dispensing slot $slotNumber…',
-                style: const TextStyle(color: Colors.white, fontSize: 16)),
-          ],
-        ),
-        content: FutureBuilder<DispenseResult>(
-          future: VendingMachineService.testDispenseSlot(slotNumber),
-          builder: (_, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const Row(
-                children: [
-                  CircularProgressIndicator(
-                      color: Color(0xFF4CAF50), strokeWidth: 2),
-                  SizedBox(width: 16),
-                  Expanded(
-                    child: Text(
-                      'Sending UART delivery command. Watch the machine — '
-                      'this can take up to 25 seconds while the motor '
-                      'completes its turn.',
-                      style: TextStyle(color: Colors.white54, fontSize: 12),
-                    ),
-                  ),
-                ],
-              );
-            }
-
-            final result = snap.data;
-            final ok = result?.status == DispenseStatus.success;
-            return Row(
-              children: [
-                Icon(
-                  ok ? Icons.check_circle_rounded : Icons.error_outline_rounded,
-                  color: ok ? Colors.greenAccent : Colors.redAccent,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    ok
-                        ? 'Success — slot $slotNumber dispensed.'
-                        : 'Failed: ${result?.errorMessage ?? "Unknown error"}',
-                    style: TextStyle(
-                        color: ok ? Colors.greenAccent : Colors.redAccent,
-                        fontSize: 13),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close',
-                style: TextStyle(color: Color(0xFF007ACC))),
-          ),
-        ],
-      ),
+      builder: (_) => _DispenseProgressDialog(slotNumber: slotNumber),
     );
   }
 
@@ -2070,5 +2018,227 @@ class _DownloadingDialog extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test Dispense progress dialog
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum _DispenseStage { sending, motorTurning, coolingDown, success, error }
+
+/// Self-contained progress dialog for the admin "Test Dispense Slot" flow.
+///
+/// Owns its own future so the dispense pipeline can't tear down the
+/// surrounding admin route mid-flight. On success the dialog auto-dismisses
+/// after a beat so the operator lands back on the same admin screen they
+/// launched from. On error it stays open with the error text and a Close
+/// button so the admin can read it before navigating away.
+class _DispenseProgressDialog extends StatefulWidget {
+  final int slotNumber;
+  const _DispenseProgressDialog({required this.slotNumber});
+
+  @override
+  State<_DispenseProgressDialog> createState() =>
+      _DispenseProgressDialogState();
+}
+
+class _DispenseProgressDialogState extends State<_DispenseProgressDialog> {
+  _DispenseStage _stage = _DispenseStage.sending;
+  String _errorMsg = '';
+  Timer? _stageTimer;
+  Timer? _autoCloseTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Roll the visible stage forward on a timer so the operator sees
+    // motion even though the underlying TTY dispense is a single 5–7 s
+    // call. These transitions are cosmetic — the real source of truth
+    // is the DispenseResult that comes back from the service.
+    _stageTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) setState(() => _stage = _DispenseStage.motorTurning);
+    });
+    Timer(const Duration(seconds: 5), () {
+      if (mounted && _stage == _DispenseStage.motorTurning) {
+        setState(() => _stage = _DispenseStage.coolingDown);
+      }
+    });
+
+    _runDispense();
+  }
+
+  Future<void> _runDispense() async {
+    try {
+      final result =
+          await VendingMachineService.testDispenseSlot(widget.slotNumber);
+      if (!mounted) return;
+
+      if (result.status == DispenseStatus.success) {
+        setState(() => _stage = _DispenseStage.success);
+        // Auto-close on success so the operator lands back on the admin
+        // panel without having to tap Close. 1.5 s is enough to register
+        // the green check visually.
+        _autoCloseTimer = Timer(const Duration(milliseconds: 1500), () {
+          if (mounted) Navigator.of(context).pop();
+        });
+      } else {
+        setState(() {
+          _stage = _DispenseStage.error;
+          _errorMsg = result.errorMessage ?? 'Unknown error';
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _stage = _DispenseStage.error;
+        _errorMsg = 'Unexpected: $e';
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _stageTimer?.cancel();
+    _autoCloseTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDone = _stage == _DispenseStage.success ||
+        _stage == _DispenseStage.error;
+
+    return AlertDialog(
+      backgroundColor: const Color(0xFF0D1A2B),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(
+        children: [
+          Icon(_titleIcon(), color: _titleColor()),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(_titleText(widget.slotNumber),
+                style: const TextStyle(color: Colors.white, fontSize: 16)),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 24, height: 24,
+                  child: _stageIndicator(),
+                ),
+                const SizedBox(width: 16),
+                Expanded(child: Text(
+                  _stageDescription(),
+                  style: TextStyle(
+                    color: isDone
+                        ? (_stage == _DispenseStage.success
+                            ? Colors.greenAccent
+                            : Colors.redAccent)
+                        : Colors.white70,
+                    fontSize: 13,
+                  ),
+                )),
+              ],
+            ),
+            if (_stage == _DispenseStage.error) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: Colors.redAccent.withValues(alpha: 0.3)),
+                ),
+                child: Text(_errorMsg,
+                    style: const TextStyle(
+                        color: Colors.redAccent, fontSize: 12)),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: isDone
+          ? [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close',
+                    style: TextStyle(color: Color(0xFF007ACC))),
+              ),
+            ]
+          : null,
+    );
+  }
+
+  // ── Stage helpers ────────────────────────────────────────────────────────
+
+  Widget _stageIndicator() {
+    switch (_stage) {
+      case _DispenseStage.success:
+        return const Icon(Icons.check_circle_rounded,
+            color: Colors.greenAccent, size: 24);
+      case _DispenseStage.error:
+        return const Icon(Icons.error_outline_rounded,
+            color: Colors.redAccent, size: 24);
+      default:
+        return const CircularProgressIndicator(
+            color: Color(0xFF4CAF50), strokeWidth: 2.5);
+    }
+  }
+
+  String _stageDescription() {
+    switch (_stage) {
+      case _DispenseStage.sending:
+        return 'Sending UART delivery command…';
+      case _DispenseStage.motorTurning:
+        return 'Motor turning — watch the machine for product drop.';
+      case _DispenseStage.coolingDown:
+        return 'Almost done — board is reporting status.';
+      case _DispenseStage.success:
+        return 'Success — slot ${widget.slotNumber} dispensed.';
+      case _DispenseStage.error:
+        return 'Dispense failed.';
+    }
+  }
+
+  IconData _titleIcon() {
+    switch (_stage) {
+      case _DispenseStage.success:
+        return Icons.check_circle_rounded;
+      case _DispenseStage.error:
+        return Icons.error_outline_rounded;
+      default:
+        return Icons.local_shipping_rounded;
+    }
+  }
+
+  Color _titleColor() {
+    switch (_stage) {
+      case _DispenseStage.success:
+        return Colors.greenAccent;
+      case _DispenseStage.error:
+        return Colors.redAccent;
+      default:
+        return const Color(0xFF4CAF50);
+    }
+  }
+
+  String _titleText(int slot) {
+    switch (_stage) {
+      case _DispenseStage.success:
+        return 'Dispense complete';
+      case _DispenseStage.error:
+        return 'Dispense error';
+      default:
+        return 'Dispensing slot $slot…';
+    }
   }
 }

@@ -9,6 +9,8 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Direct /dev/ttyS* serial bridge to the Reyeah Control Board.
@@ -18,6 +20,21 @@ import java.io.OutputStream
  * through a USB-to-serial bridge — so usb_serial enumeration sees nothing.
  *
  * Method channel: vmfs.kiosk/tty_serial
+ *
+ * Concurrency model
+ * -----------------
+ * Every native call (open / write / read / close) is dispatched onto a
+ * single-thread executor. That serializes access to the underlying
+ * file descriptor end-to-end — there's no longer a window where close()
+ * on the UI thread can yank the fd while a background read is mid-flight
+ * inside libserial_port.so. Eliminating that race is what fixes the
+ * post-dispense SIGSEGV that was killing the activity (the crash that
+ * sometimes auto-relaunched via the HOME launcher, sometimes left the
+ * screen black).
+ *
+ * The `closing` flag is set the moment a close request is enqueued, so
+ * any in-flight read returns its accumulated bytes immediately instead
+ * of looping into a freshly-closed fd.
  *
  * Methods:
  *   listDevices()            -> List<String>     all /dev/ttyS* and /dev/ttyUSB* paths
@@ -38,36 +55,73 @@ class TtySerialChannel(engine: FlutterEngine) {
     private var inputStream: InputStream? = null
     private var outputStream: OutputStream? = null
 
+    /** Set true while a close is being processed so reads bail out cleanly. */
+    private val closing = AtomicBoolean(false)
+
+    /** Every native operation runs on this single thread. */
+    private val ioThread = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "vmfs-tty-io").apply { isDaemon = true }
+    }
+
     private val main = Handler(Looper.getMainLooper())
 
     init {
         channel.setMethodCallHandler { call, result ->
-            try {
-                when (call.method) {
-                    "listDevices" -> result.success(listDevices())
-                    "open" -> {
-                        val path = call.argument<String>("path")
-                        val baud = call.argument<Int>("baud") ?: 9600
-                        result.success(open(path, baud))
+            when (call.method) {
+                // listDevices is pure filesystem — safe on the platform thread.
+                "listDevices" -> result.success(listDevices())
+                "isOpen" -> result.success(port != null)
+
+                "open" -> {
+                    val path = call.argument<String>("path")
+                    val baud = call.argument<Int>("baud") ?: 9600
+                    ioThread.execute {
+                        try {
+                            val ok = open(path, baud)
+                            main.post { result.success(ok) }
+                        } catch (e: Throwable) {
+                            main.post { result.error("TTY_ERROR", e.message ?: "open failed", null) }
+                        }
                     }
-                    "write" -> {
-                        val data = call.argument<ByteArray>("data")
-                        result.success(write(data))
-                    }
-                    "read" -> {
-                        val timeout = call.argument<Int>("timeoutMs") ?: 1000
-                        // Blocking-with-timeout reads run on a background thread.
-                        Thread {
-                            val bytes = readWithTimeout(timeout)
-                            main.post { result.success(bytes) }
-                        }.start()
-                    }
-                    "close" -> result.success(close())
-                    "isOpen" -> result.success(port != null)
-                    else -> result.notImplemented()
                 }
-            } catch (e: Throwable) {
-                result.error("TTY_ERROR", e.javaClass.simpleName + ": " + (e.message ?: ""), null)
+
+                "write" -> {
+                    val data = call.argument<ByteArray>("data")
+                    ioThread.execute {
+                        try {
+                            val ok = write(data)
+                            main.post { result.success(ok) }
+                        } catch (e: Throwable) {
+                            main.post { result.error("TTY_ERROR", e.message ?: "write failed", null) }
+                        }
+                    }
+                }
+
+                "read" -> {
+                    val timeout = call.argument<Int>("timeoutMs") ?: 1000
+                    ioThread.execute {
+                        val bytes = try {
+                            readWithTimeout(timeout)
+                        } catch (_: Throwable) {
+                            byteArrayOf()
+                        }
+                        main.post { result.success(bytes) }
+                    }
+                }
+
+                "close" -> {
+                    // Flip the flag immediately so any read sitting in
+                    // readWithTimeout returns on the next sleep tick instead
+                    // of trying to read from a closing fd.
+                    closing.set(true)
+                    ioThread.execute {
+                        val ok = try { close() } catch (_: Throwable) { false }
+                        closing.set(false)
+                        main.post { result.success(ok) }
+                    }
+                }
+
+                else -> result.notImplemented()
             }
         }
     }
@@ -81,9 +135,11 @@ class TtySerialChannel(engine: FlutterEngine) {
             .sorted()
     }
 
+    /** All callers run on ioThread, so direct field access is safe here. */
     private fun open(path: String?, baud: Int): Boolean {
         if (path.isNullOrEmpty()) throw IllegalArgumentException("path required")
-        close()
+        // Reset any leftover state from a prior session synchronously.
+        closeInternal()
         val file = File(path)
         if (!file.exists()) throw IOException("Device not found: $path")
         val sp = SerialPort(file, baud, 0)
@@ -104,7 +160,8 @@ class TtySerialChannel(engine: FlutterEngine) {
     /**
      * Read up to 1024 bytes, returning whatever has arrived after [timeoutMs]
      * OR as soon as a quiet period (>=80 ms with no new bytes) is detected.
-     * Returns an empty array if no data arrived within the timeout.
+     * Returns an empty array if no data arrived within the timeout, or if a
+     * close was requested mid-read.
      */
     private fun readWithTimeout(timeoutMs: Int): ByteArray {
         val ins = inputStream ?: return byteArrayOf()
@@ -114,9 +171,18 @@ class TtySerialChannel(engine: FlutterEngine) {
         var lastByteAt = 0L
 
         while (System.currentTimeMillis() < deadline) {
+            // Abort early if a close was requested. We're on the same thread
+            // as close() (single-thread executor), but the flag is checked
+            // here as defense against future refactors that change threading.
+            if (closing.get()) break
+
             val available = try { ins.available() } catch (_: IOException) { 0 }
             if (available > 0) {
-                val n = ins.read(buffer, total, minOf(buffer.size - total, available))
+                val n = try {
+                    ins.read(buffer, total, minOf(buffer.size - total, available))
+                } catch (_: IOException) {
+                    break
+                }
                 if (n > 0) {
                     total += n
                     lastByteAt = System.currentTimeMillis()
@@ -124,7 +190,6 @@ class TtySerialChannel(engine: FlutterEngine) {
                 if (total >= buffer.size) break
                 continue
             }
-            // If we already have bytes and 80 ms of silence has passed → frame complete.
             if (total > 0 && System.currentTimeMillis() - lastByteAt > 80) break
             try { Thread.sleep(15) } catch (_: InterruptedException) { break }
         }
@@ -132,7 +197,9 @@ class TtySerialChannel(engine: FlutterEngine) {
         return if (total > 0) buffer.copyOf(total) else byteArrayOf()
     }
 
-    private fun close(): Boolean {
+    private fun close(): Boolean = closeInternal()
+
+    private fun closeInternal(): Boolean {
         return try {
             try { inputStream?.close() } catch (_: Throwable) {}
             try { outputStream?.close() } catch (_: Throwable) {}

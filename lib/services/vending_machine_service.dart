@@ -50,6 +50,25 @@ class DispenseResult {
 class VendingMachineService {
   static String get _baseUrl => AppConfig.apiBaseUrl;
 
+  // ── Single-flight gate ────────────────────────────────────────────────────
+  // Only ONE dispense can be in flight at a time, and a fresh dispense can't
+  // start until the previous one has cooled down for [_kCooldownMs]. Two
+  // reasons:
+  //
+  //  1. The previous code allowed back-to-back dispenses to overlap on the
+  //     native TTY channel, racing against the close() call that follows
+  //     dispense N while dispense N+1 was already trying to open. That race
+  //     was a major contributor to the post-vend SIGSEGV.
+  //
+  //  2. The Reyeah board needs a brief idle window between commands or it
+  //     ignores the second frame. The cooldown also gives Android's audio
+  //     subsystem (which can be triggered by the motor relay click) time
+  //     to settle, which on a few of the cheaper OEM tablets was throwing
+  //     ANRs and killing the activity.
+  static Future<DispenseResult>? _inFlight;
+  static DateTime? _lastDispenseEndedAt;
+  static const _kCooldownMs = 1500;
+
   // ── Constructor de tramas ─────────────────────────────────────────────────
 
   /// Construye la trama binaria para cualquier comando.
@@ -107,11 +126,70 @@ class VendingMachineService {
 
   // ── Flujo principal ───────────────────────────────────────────────────────
 
+  /// Internal single-flight gate. If another dispense is already running we
+  /// await its result before starting; if one just finished we sleep the
+  /// remaining cooldown so the next request hits a quiet TTY channel and a
+  /// quiet motor relay.
+  static Future<DispenseResult> _withDispenseGate(
+    Future<DispenseResult> Function() body,
+  ) async {
+    // Chain onto any in-flight dispense rather than running concurrently.
+    // We intentionally only OBSERVE the previous result — we don't reuse
+    // it — so the caller never gets stale data from another flow.
+    while (_inFlight != null) {
+      try {
+        await _inFlight;
+      } catch (_) {
+        // Previous dispense errored out; that's its caller's problem,
+        // not ours.
+      }
+    }
+
+    // Honor the post-dispense cooldown window.
+    final ended = _lastDispenseEndedAt;
+    if (ended != null) {
+      final waited = DateTime.now().difference(ended).inMilliseconds;
+      if (waited < _kCooldownMs) {
+        await Future.delayed(Duration(milliseconds: _kCooldownMs - waited));
+      }
+    }
+
+    final completer = body();
+    _inFlight = completer;
+    try {
+      final result = await completer;
+      return result;
+    } finally {
+      _lastDispenseEndedAt = DateTime.now();
+      if (identical(_inFlight, completer)) _inFlight = null;
+    }
+  }
+
   /// Despacha el producto del slot [lineNumber] y reporta el resultado
   /// al backend Laravel.
   ///
   /// [simulateSuccess] = true → omite el hardware (pruebas sin máquina).
   static Future<DispenseResult> dispenseProduct({
+    required int lineNumber,
+    required String lotteryCode,
+    required String machineNo,
+    bool simulateSuccess = false,
+    String paymentMethod = 'cash',
+    String? paymentReference,
+    void Function(DispenseStatus)? onProgress,
+  }) {
+    return _withDispenseGate(() => _dispenseProductImpl(
+          lineNumber:       lineNumber,
+          lotteryCode:      lotteryCode,
+          machineNo:        machineNo,
+          simulateSuccess:  simulateSuccess,
+          paymentMethod:    paymentMethod,
+          paymentReference: paymentReference,
+          onProgress:       onProgress,
+        ));
+  }
+
+  static Future<DispenseResult> _dispenseProductImpl({
     required int lineNumber,
     required String lotteryCode,
     required String machineNo,
@@ -178,7 +256,11 @@ class VendingMachineService {
   ///
   /// Returns a [DispenseResult] — `success` means the motor confirmed delivery,
   /// `error` means the VMC reported a fault or did not respond.
-  static Future<DispenseResult> testDispenseSlot(int lineNumber) async {
+  static Future<DispenseResult> testDispenseSlot(int lineNumber) {
+    return _withDispenseGate(() => _testDispenseSlotImpl(lineNumber));
+  }
+
+  static Future<DispenseResult> _testDispenseSlotImpl(int lineNumber) async {
     if (kIsWeb) {
       return const DispenseResult(
         status: DispenseStatus.error,
