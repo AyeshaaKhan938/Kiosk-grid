@@ -256,6 +256,16 @@ class VendingMachineService {
       );
     }
 
+    // Honor the same Simulate Dispense toggle the customer flow uses.
+    // When the operator wants to verify the app's flow / progress dialog
+    // without firing any real hardware (e.g. on a bench tablet, or while
+    // diagnosing a TTY driver issue), flipping the admin toggle now
+    // bypasses TTY entirely for the test path too.
+    if (AppConfig.simulateDispense) {
+      await Future.delayed(const Duration(seconds: 5));
+      return const DispenseResult(status: DispenseStatus.success);
+    }
+
     try {
       final ok = await _sendDeliveryViaTty(
         lineNumber: lineNumber,
