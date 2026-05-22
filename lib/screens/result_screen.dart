@@ -56,7 +56,7 @@ class _ResultScreenState extends State<ResultScreen> {
       _state = _Flow.noSlot;
       _returnTimer = Timer(const Duration(seconds: 4), _returnToIdle);
     } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _dispense());
+      WidgetsBinding.instance.addPostFrameCallback((_) => _safeDispense());
     }
   }
 
@@ -64,6 +64,24 @@ class _ResultScreenState extends State<ResultScreen> {
   void dispose() {
     _returnTimer?.cancel();
     super.dispose();
+  }
+
+  /// Outer wrapper so any unhandled throwable inside the dispense pipeline
+  /// shows a readable error on screen instead of crashing the activity.
+  Future<void> _safeDispense() async {
+    try {
+      await _dispense();
+    } catch (e, stack) {
+      // Log so we have a trail in `adb logcat`, then degrade to the
+      // on-screen error state with the exception message so an admin
+      // standing in front of the machine can read what went wrong.
+      debugPrint('ResultScreen dispense crashed: $e\n$stack');
+      if (!mounted) return;
+      setState(() {
+        _state = _Flow.error;
+        _errorMsg = 'Dispense failed: $e';
+      });
+    }
   }
 
   Future<void> _dispense() async {
@@ -78,15 +96,22 @@ class _ResultScreenState extends State<ResultScreen> {
       onProgress:      (_) {},
     );
 
+    // Best-effort scratch-card confirm. The function itself swallows its
+    // own errors, but wrap the launch in try/catch as belt-and-suspenders
+    // so a synchronous throw can't escape this method.
     if (widget.tier.isNotEmpty && widget.lotteryCode.isNotEmpty) {
-      unawaited(ApiService.confirmScratchCard(
-        code:        widget.lotteryCode,
-        tier:        widget.tier,
-        lineNumber:  widget.lineNumber!,
-        prizeAmount: double.tryParse(widget.price) ?? 0.0,
-        success:     result.status == DispenseStatus.success,
-        error:       result.errorMessage,
-      ));
+      try {
+        unawaited(ApiService.confirmScratchCard(
+          code:        widget.lotteryCode,
+          tier:        widget.tier,
+          lineNumber:  widget.lineNumber!,
+          prizeAmount: double.tryParse(widget.price) ?? 0.0,
+          success:     result.status == DispenseStatus.success,
+          error:       result.errorMessage,
+        ));
+      } catch (e) {
+        debugPrint('confirmScratchCard threw synchronously: $e');
+      }
     }
 
     if (!mounted) return;
@@ -106,12 +131,16 @@ class _ResultScreenState extends State<ResultScreen> {
 
   void _returnToIdle() {
     if (!mounted) return;
-    Navigator.of(context).popUntil((r) => r.isFirst);
+    try {
+      Navigator.of(context).popUntil((r) => r.isFirst);
+    } catch (e) {
+      debugPrint('returnToIdle navigation failed: $e');
+    }
   }
 
   void _retry() {
     setState(() { _state = _Flow.dispensing; _errorMsg = ''; });
-    _dispense();
+    _safeDispense();
   }
 
   @override
