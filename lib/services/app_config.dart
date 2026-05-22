@@ -154,11 +154,19 @@ class AppConfig {
       _prefs?.setBool(_kSimulateDispense, value);
 
   /// Path of the /dev/ttyS* device wired to the Reyeah Control Board.
-  /// Defaults to /dev/ttyS0 — the most common port on Reyeah T1-02 boards.
+  ///
+  /// Resolved against the factory APK's decompiled SerialPortUtils, which
+  /// branches on SDK level:
+  ///   Build.VERSION.SDK_INT == 30  -> /dev/ttyS3   (Android 11)
+  ///   else                         -> /dev/ttyS0
+  ///
+  /// Our production hardware runs Android 11, so we default to /dev/ttyS3.
+  /// The admin "TTY Serial Port" tile still lets an operator override per
+  /// machine if a future tablet ships a different UART mapping.
   static String get ttyPath {
     final stored = _prefs?.getString(_kTtyPath);
     if (stored != null && stored.isNotEmpty) return stored;
-    return dotenv.env['TTY_PATH'] ?? '/dev/ttyS0';
+    return dotenv.env['TTY_PATH'] ?? '/dev/ttyS3';
   }
 
   static Future<void> setTtyPath(String path) async =>
