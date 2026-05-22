@@ -102,6 +102,31 @@ class UpdateService {
     );
   }
 
+  /// Resolves the backend's APK URL to a fully-qualified, properly-encoded
+  /// URI. The vms-cloud admin can store paths in three different shapes
+  /// (legacy migrations, the old uploader, and the current Filament form
+  /// don't agree), so we have to be tolerant of all of them:
+  ///
+  ///   - `https://cloud.vmfsusa.com/storage/...apk` → already absolute, use as-is
+  ///   - `/storage/kiosk-updates/foo.apk`           → root-relative, prefix with API origin
+  ///   - `kiosk-updates/foo.apk`                    → relative, prefix with API origin + /storage/
+  ///
+  /// Also `Uri.parse` doesn't URL-encode the path automatically, so a
+  /// filename like `app-release (4).apk` (Filament adds the "(N)" suffix
+  /// when an upload would overwrite an existing file) becomes invalid.
+  /// `Uri.encodeFull` fixes that without re-encoding existing %20 etc.
+  static Uri _resolveApkUri(String raw) {
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      return Uri.parse(Uri.encodeFull(raw));
+    }
+    final base = AppConfig.apiBaseUrl; // e.g. https://cloud.vmfsusa.com/api/v1
+    final origin = Uri.tryParse(base)?.origin ?? base;
+    final path = raw.startsWith('/')
+        ? raw
+        : '/storage/$raw';
+    return Uri.parse(Uri.encodeFull('$origin$path'));
+  }
+
   /// Downloads the APK to a temp file. Returns the file path on success.
   /// Calls [onProgress] with (downloadedBytes, totalBytes) for UI updates.
   static Future<String> download(
@@ -119,7 +144,10 @@ class UpdateService {
     final file = File('${dir.path}/vmfs-kiosk-${info.versionCode}.apk');
     if (await file.exists()) await file.delete();
 
-    final request = http.Request('GET', Uri.parse(info.apkUrl));
+    final resolvedUri = _resolveApkUri(info.apkUrl);
+    debugPrint('[update] downloading APK from $resolvedUri '
+        '(raw value from backend: "${info.apkUrl}")');
+    final request = http.Request('GET', resolvedUri);
     final streamed = await request.send().timeout(const Duration(seconds: 30));
     if (streamed.statusCode != 200) {
       throw UpdateException('APK download failed (HTTP ${streamed.statusCode}).');
