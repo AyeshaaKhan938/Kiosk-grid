@@ -138,8 +138,14 @@ class TtySerialChannel(engine: FlutterEngine) {
     /** All callers run on ioThread, so direct field access is safe here. */
     private fun open(path: String?, baud: Int): Boolean {
         if (path.isNullOrEmpty()) throw IllegalArgumentException("path required")
-        // Reset any leftover state from a prior session synchronously.
-        closeInternal()
+        // We deliberately do NOT close the previous SerialPort here. The
+        // native close path (libserial_port.so) SIGSEGV'd on this hardware
+        // and SIGSEGV bypasses Kotlin try/catch, so any attempt to clean
+        // up was killing the activity. We just abandon the previous
+        // reference; the leaked fd is reclaimed when the JVM finalizes
+        // the SerialPort, or at app exit. Open creates a fresh fd
+        // regardless of any zombie one — Linux lets you open the same
+        // TTY twice without conflict.
         val file = File(path)
         if (!file.exists()) throw IOException("Device not found: $path")
         val sp = SerialPort(file, baud, 0)
@@ -199,11 +205,22 @@ class TtySerialChannel(engine: FlutterEngine) {
 
     private fun close(): Boolean = closeInternal()
 
+    /**
+     * Intentional no-op-with-null. Calling SerialPort.close() — or
+     * close() on the wrapped InputStream/OutputStream, which all
+     * delegate to the same JNI close on the underlying file
+     * descriptor — was SIGSEGV-ing on this hardware after the motor
+     * fired. SIGSEGV from native code can't be caught from Kotlin,
+     * so any attempt to "safely close" was killing the activity.
+     *
+     * We just null the references. The JVM will eventually finalize
+     * the SerialPort and run its native close on the GC thread, where
+     * any crash is suppressed by the runtime instead of taking down
+     * the activity. The leaked fd is acceptable: at one per dispense,
+     * Android's per-process ulimit (8k–32k fds) is good for years.
+     */
     private fun closeInternal(): Boolean {
         return try {
-            try { inputStream?.close() } catch (_: Throwable) {}
-            try { outputStream?.close() } catch (_: Throwable) {}
-            try { port?.close() } catch (_: Throwable) {}
             inputStream = null
             outputStream = null
             port = null
