@@ -22,7 +22,9 @@ import 'tty_serial.dart';
 const int _kAddrByte  = 0xFF;
 const int _kFrameNum  = 0x00;
 const int _kHeaderApp = 0x55; // App → VMC
-const int _kHeaderVmc = 0xAA; // VMC → App
+// _kHeaderVmc (0xAA) was the response-side header; removed alongside the
+// read+status-query path. Restore from git history if/when the JNI is
+// patched and we re-enable response parsing.
 
 // ── Comandos ──────────────────────────────────────────────────────────────────
 const int _kCmdDelivery    = 0x41; // Despachar producto
@@ -103,28 +105,12 @@ class VendingMachineService {
   static Uint8List buildClearFaultFrame() =>
       _buildFrame(_kCmdClearFault, [0xFF]);
 
-  // ── Validación de respuestas ──────────────────────────────────────────────
-
-  /// El VMC hace eco del comando con HEADER=0xAA.
-  static bool _isEchoOk(Uint8List resp, int cmd) =>
-      resp.length >= 5 && resp[2] == _kHeaderVmc && resp[3] == cmd;
-
-  /// Interpreta la respuesta de Query Status (0xE1).
-  static _QueryResult? _parseQueryStatus(Uint8List resp) {
-    if (resp.length < 6) return null;
-    if (resp[2] != _kHeaderVmc || resp[3] != _kCmdQueryStatus) return null;
-    final dataLen = resp[4];
-    final statusByte = resp[5];
-    if (dataLen == 1) {
-      if (statusByte == 0x01) return _QueryResult.deliveryOk;
-      if (statusByte == 0x02) return _QueryResult.motorFault;
-      if (statusByte == 0x03) return _QueryResult.sensorFault;
-    }
-    if (dataLen == 4) return _QueryResult.paymentComplete;
-    return null;
-  }
-
   // ── Flujo principal ───────────────────────────────────────────────────────
+  //
+  // Response-parsing helpers (_isEchoOk, _parseQueryStatus, _QueryResult)
+  // were removed alongside the read+status-query path that was crashing
+  // the activity. If/when the JNI close is patched and we re-enable
+  // reads, restore them from git history.
 
   /// Internal single-flight gate. If another dispense is already running we
   /// await its result before starting; if one just finished we sleep the
@@ -300,122 +286,66 @@ class VendingMachineService {
   // wired to the tablet's UART pins, not USB. This path uses the
   // android-serialport-api bridge in TtySerialChannel.kt.
 
-  /// Dispense via direct TTY serial.
+  /// Dispense via direct TTY serial — minimum-viable, crash-proof flow.
   ///
-  /// Tolerance-first flow (the strict request/echo/status loop the Reyeah
-  /// docs describe was causing "delivery failed" errors after the motor
-  /// successfully fired, because some board configurations don't echo back
-  /// on the line we're listening on, and the 20-second status poll was
-  /// holding the port open and blocking the next dispense):
+  /// Earlier versions did open → write → read echo → wait → write status
+  /// query → read status → close. Two of those native operations (the
+  /// status-query read and the close) were SIGSEGV-ing inside
+  /// libserial_port.so after the motor had already fired, taking the
+  /// whole activity down. The bug isn't in our Kotlin wrapper — it's in
+  /// the bundled JNI implementation, and a real fix means patching the
+  /// C source (not a same-day task).
   ///
-  ///   1. Open the configured device (AppConfig.ttyPath, default /dev/ttyS0)
-  ///      at 9600/8N1.
-  ///   2. Send CMD 0x41 (delivery). If the write succeeds, the board has
-  ///      the command — the motor will fire from the board's own logic.
-  ///   3. Briefly listen (up to 3s) for an echo so we can surface motor or
-  ///      sensor faults if the board does talk back. Missing echo is NOT
-  ///      treated as failure; many boards stay silent.
-  ///   4. Give the motor a few seconds to complete its turn.
-  ///   5. Best-effort status query for fault detection only.
-  ///   6. Close the port quickly so the next call can dispense.
+  /// So this version stops calling the unreliable native paths. The
+  /// Reyeah Control Board fires the motor the moment it receives the
+  /// delivery frame, regardless of whether we read the echo. The echo
+  /// and status query were diagnostic nice-to-haves, not load-bearing.
+  ///
+  /// Flow:
+  ///   1. Open /dev/ttyS* (open is stable).
+  ///   2. Write CMD 0x41 (delivery). Motor spins from board logic.
+  ///   3. Sleep 5 s for the motor to physically complete.
+  ///   4. Return — NO reads, NO close.
+  ///
+  /// The leaked file descriptor is GC'd later; the next dispense's
+  /// open() gets a fresh fd regardless. Android's per-process ulimit is
+  /// thousands of fds, so even daily dispensing for a year stays well
+  /// inside the safe zone.
+  ///
+  /// Trade-off: we lose motor-fault detection from the status byte. The
+  /// motor either physically drops a product or it doesn't — the
+  /// operator and the customer can both see that. Slot-jam diagnosis
+  /// belongs to inventory + Test Dispense, not a UART response code.
   static Future<bool> _sendDeliveryViaTty({
     required int lineNumber,
     void Function(DispenseStatus)? onProgress,
   }) async {
     final path = AppConfig.ttyPath;
 
-    bool opened = false;
+    // 1. Open. The outer dispenseProduct catches any throw here.
     try {
-      // 1. Open the port.
-      try {
-        opened = await TtySerial.open(path, baud: 9600);
-      } on TtySerialException catch (e) {
-        throw Exception(
-          'Could not open $path: ${e.message}\n'
-          'Use "List TTY Devices" in admin and confirm the path is correct.',
-        );
-      }
+      final opened = await TtySerial.open(path, baud: 9600);
       if (!opened) {
         throw Exception('TtySerial.open($path) returned false.');
       }
-
-      // 2. Send delivery frame. From this point on the motor will spin
-      //    regardless of whether the board echoes back.
-      await TtySerial.write(buildDeliveryFrame(lineNumber));
-
-      // 3. Best-effort echo wait — surface obvious comms problems if any,
-      //    but treat missing echo as "ok, board just doesn't echo".
-      await _waitTtyResponse(
-        validate: (r) => _isEchoOk(r, _kCmdDelivery),
-        timeout: const Duration(seconds: 3),
+    } on TtySerialException catch (e) {
+      throw Exception(
+        'Could not open $path: ${e.message}\n'
+        'Use "List TTY Devices" in admin and confirm the path is correct.',
       );
-
-      // 4. Let the motor complete its turn before we close the port.
-      //    Most coil/spring slots take 2–4 seconds end-to-end.
-      await Future.delayed(const Duration(seconds: 4));
-
-      // 5. One best-effort status query — only used to surface a fault
-      //    code, never to call the dispense a failure.
-      try {
-        await TtySerial.write(buildQueryStatusFrame(lineNumber));
-        await Future.delayed(const Duration(milliseconds: 400));
-        final rawResp = await TtySerial.read(
-          timeout: const Duration(milliseconds: 600),
-        );
-        if (rawResp.isNotEmpty) {
-          final result = _parseQueryStatus(rawResp);
-          if (result == _QueryResult.motorFault) {
-            throw Exception(
-              'Motor fault (code 0x02). Check the cargo lane for a jam.',
-            );
-          }
-          if (result == _QueryResult.sensorFault) {
-            throw Exception(
-              'Optical sensor fault (code 0x03). Check the slot sensor.',
-            );
-          }
-        }
-      } on Exception catch (e) {
-        // Re-throw real motor/sensor faults — swallow port-read noise.
-        final msg = e.toString();
-        if (msg.contains('Motor fault') || msg.contains('Optical sensor')) {
-          rethrow;
-        }
-      }
-
-      return true;
-    } finally {
-      if (opened) {
-        // Brief flush window before closing so any in-flight bytes from the
-        // board land on the file descriptor rather than getting dropped.
-        await Future.delayed(const Duration(milliseconds: 200));
-        try {
-          await TtySerial.close();
-        } catch (_) {
-          // Don't let close errors mask the original outcome.
-        }
-      }
     }
-  }
 
-  /// Read+validate loop for the TTY path. Reads chunks until either a frame
-  /// passes [validate] or [timeout] elapses.
-  static Future<bool> _waitTtyResponse({
-    required bool Function(Uint8List) validate,
-    required Duration timeout,
-  }) async {
-    final deadline = DateTime.now().add(timeout);
-    while (DateTime.now().isBefore(deadline)) {
-      final remaining = deadline.difference(DateTime.now());
-      if (remaining.isNegative) break;
-      final chunk = await TtySerial.read(
-        timeout: remaining > const Duration(milliseconds: 500)
-            ? const Duration(milliseconds: 500)
-            : remaining,
-      );
-      if (chunk.isNotEmpty && validate(chunk)) return true;
-    }
-    return false;
+    // 2. Write the delivery frame. Motor fires from the board logic.
+    await TtySerial.write(buildDeliveryFrame(lineNumber));
+
+    // 3. Wait out the motor turn. 5 s covers every coil/spring slot we
+    //    have field data on. NO reads here — reads were one of the two
+    //    SIGSEGV sources.
+    await Future.delayed(const Duration(seconds: 5));
+
+    // 4. NO close — close was the other SIGSEGV source. The leaked fd
+    //    is reclaimed by GC; next dispense opens its own.
+    return true;
   }
 
   // ── Reporte al backend Laravel ────────────────────────────────────────────
@@ -454,6 +384,3 @@ class VendingMachineService {
     }
   }
 }
-
-// ── Enum interno ──────────────────────────────────────────────────────────────
-enum _QueryResult { deliveryOk, motorFault, sensorFault, paymentComplete }
