@@ -516,19 +516,11 @@ class _BackendAdWidget extends StatelessWidget {
     return _fallback(ad.title);
   }
 
-  Widget _fallback(String title) => Container(
-    decoration: const BoxDecoration(
-      gradient: LinearGradient(
-        colors: [Color(0xFF001230), Colors.black],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-    ),
-    child: Center(
-      child: Text(title,
-          style: const TextStyle(color: Colors.white38, fontSize: 20)),
-    ),
-  );
+  /// Silent fallback — pure black background, no text. Used when the
+  /// backend's image URL fails to load. The title is intentionally
+  /// not displayed because customers should never see a placeholder
+  /// label; either the ad renders or nothing renders.
+  Widget _fallback(String title) => const ColoredBox(color: Colors.black);
 }
 
 /// Small "Update available — v X.X.X" pill shown on the idle screen when
