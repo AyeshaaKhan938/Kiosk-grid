@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'app_config.dart';
+import 'dispense_wake_lock.dart';
+import 'log_file_util.dart';
 import 'tty_serial.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -140,14 +142,31 @@ class VendingMachineService {
       }
     }
 
+    // Hold a CPU wake lock for the duration of the gated op so Android
+    // can't suspend us mid-motor-turn. Auto-released after 30s as a
+    // safety net in case the body never completes.
+    await DispenseWakeLock.acquire(
+      'dispense',
+      timeout: const Duration(seconds: 30),
+    );
+    LogFileUtil.i('dispense.gate.enter');
+
     final completer = body();
     _inFlight = completer;
     try {
       final result = await completer;
+      LogFileUtil.i('dispense.gate.result', {
+        'status': result.status.name,
+        if (result.errorMessage != null) 'error': result.errorMessage!,
+      });
       return result;
+    } catch (e, st) {
+      LogFileUtil.e('dispense.gate.exception', error: e, stack: st);
+      rethrow;
     } finally {
       _lastDispenseEndedAt = DateTime.now();
       if (identical(_inFlight, completer)) _inFlight = null;
+      await DispenseWakeLock.release('dispense');
     }
   }
 
@@ -232,6 +251,80 @@ class VendingMachineService {
       status: physicalSuccess ? DispenseStatus.success : DispenseStatus.error,
       errorMessage: physicalSuccess ? null : errorMsg,
     );
+  }
+
+  // ── Heartbeat + fault recovery (factory parity) ──────────────────────────
+
+  /// Sends a CMD 0xE1 status query through the same single-flight gate
+  /// the dispense flow uses. Returns true if the board echoed anything
+  /// back. Best-effort: never throws. Used by [BoardHeartbeat] for
+  /// periodic liveness checks.
+  static Future<bool> queryStatusViaGate({int slot = 1}) async {
+    if (kIsWeb) return false;
+    final result = await _withDispenseGate(() => _queryStatusImpl(slot));
+    return result.status == DispenseStatus.success;
+  }
+
+  static Future<DispenseResult> _queryStatusImpl(int slot) async {
+    try {
+      final opened = await TtySerial.open(AppConfig.ttyPath, baud: 9600);
+      if (!opened) {
+        return const DispenseResult(
+          status: DispenseStatus.error,
+          errorMessage: 'open failed',
+        );
+      }
+      await TtySerial.write(buildQueryStatusFrame(slot));
+      final resp = await TtySerial.read(
+        timeout: const Duration(milliseconds: 600),
+      );
+      return DispenseResult(
+        status: resp.isNotEmpty
+            ? DispenseStatus.success
+            : DispenseStatus.error,
+        errorMessage: resp.isEmpty ? 'no reply' : null,
+      );
+    } catch (e) {
+      return DispenseResult(
+        status: DispenseStatus.error,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
+  /// Sends CMD 0xA2 (clear fault). Admin uses this when the board has
+  /// latched a motor or sensor fault and refuses to dispense further.
+  /// Runs through the dispense gate; returns the result so admin UI can
+  /// show success / error to the operator.
+  static Future<DispenseResult> clearFaultsViaGate() async {
+    if (kIsWeb) {
+      return const DispenseResult(
+        status: DispenseStatus.error,
+        errorMessage: 'Clear faults only works on the tablet.',
+      );
+    }
+    return _withDispenseGate(_clearFaultsImpl);
+  }
+
+  static Future<DispenseResult> _clearFaultsImpl() async {
+    try {
+      final opened = await TtySerial.open(AppConfig.ttyPath, baud: 9600);
+      if (!opened) {
+        return const DispenseResult(
+          status: DispenseStatus.error,
+          errorMessage: 'TtySerial.open returned false',
+        );
+      }
+      await TtySerial.write(buildClearFaultFrame());
+      // Drain any echo so it doesn't pollute the next dispense's read.
+      await TtySerial.read(timeout: const Duration(milliseconds: 400));
+      return const DispenseResult(status: DispenseStatus.success);
+    } catch (e) {
+      return DispenseResult(
+        status: DispenseStatus.error,
+        errorMessage: e.toString(),
+      );
+    }
   }
 
   // ── Admin / hardware test ─────────────────────────────────────────────────
@@ -322,14 +415,19 @@ class VendingMachineService {
     void Function(DispenseStatus)? onProgress,
   }) async {
     final path = AppConfig.ttyPath;
+    LogFileUtil.i('tty.dispense.start',
+        {'slot': lineNumber.toString(), 'path': path});
 
     // 1. Open. The outer dispenseProduct catches any throw here.
     try {
       final opened = await TtySerial.open(path, baud: 9600);
       if (!opened) {
+        LogFileUtil.e('tty.open.returned_false', extra: {'path': path});
         throw Exception('TtySerial.open($path) returned false.');
       }
     } on TtySerialException catch (e) {
+      LogFileUtil.e('tty.open.exception',
+          extra: {'path': path}, error: e.message);
       throw Exception(
         'Could not open $path: ${e.message}\n'
         'Use "List TTY Devices" in admin and confirm the path is correct.',
@@ -337,7 +435,14 @@ class VendingMachineService {
     }
 
     // 2. Write the delivery frame.
-    await TtySerial.write(buildDeliveryFrame(lineNumber));
+    final frame = buildDeliveryFrame(lineNumber);
+    LogFileUtil.i('tty.write', {
+      'cmd': '0x41',
+      'bytes': frame
+          .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
+          .join(' '),
+    });
+    await TtySerial.write(frame);
 
     // 3. Drain the inbound queue (echo / status from the board).
     //    Bytes come from the channel's in-process queue populated by
@@ -345,7 +450,9 @@ class VendingMachineService {
     //    so this can never race with close(). Best-effort: motor
     //    fires regardless of echo.
     try {
-      await TtySerial.read(timeout: const Duration(milliseconds: 600));
+      final resp =
+          await TtySerial.read(timeout: const Duration(milliseconds: 600));
+      LogFileUtil.i('tty.echo', {'bytes': resp.length.toString()});
     } catch (_) {
       // A read failure here is fine; we already wrote the command.
     }
@@ -353,6 +460,7 @@ class VendingMachineService {
     // 4. Wait out the motor turn. 5 s covers every coil/spring slot we
     //    have field data on.
     await Future.delayed(const Duration(seconds: 5));
+    LogFileUtil.i('tty.dispense.complete', {'slot': lineNumber.toString()});
 
     // 5. Intentionally NO close — singleton stays open for the next
     //    dispense (factory pattern). Closing happens via explicit

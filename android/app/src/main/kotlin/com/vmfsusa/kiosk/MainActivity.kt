@@ -183,6 +183,23 @@ class MainActivity : FlutterActivity() {
         // Remote APK self-update — installs an APK downloaded from vms-cloud.
         ApkInstallerChannel(applicationContext, flutterEngine)
 
+        // Persistent log file (factory-parity LogFileUtil port). Writes
+        // date-rotated text files under the app's external-files dir so
+        // field debugging captures every send/receive, dispense, OTA
+        // attempt, etc. — invaluable when the client reports an issue
+        // we can't reproduce locally.
+        LogFileChannel(applicationContext, flutterEngine)
+
+        // PARTIAL_WAKE_LOCK manager for the dispense / OTA windows so
+        // the CPU isn't suspended mid-motor-turn or mid-download.
+        WakeLockChannel(applicationContext, flutterEngine)
+
+        // Foreground priority anchor. Keeps the process alive even when
+        // Android's low-memory killer would normally reap a background
+        // app. The notification is hidden under our immersive bar so
+        // customers never see it.
+        SerialMonitorService.start(applicationContext)
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, kioskChannel)
             .setMethodCallHandler { call, result ->
                 when (call.method) {

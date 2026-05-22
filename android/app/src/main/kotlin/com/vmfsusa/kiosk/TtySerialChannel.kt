@@ -174,6 +174,29 @@ class TtySerialChannel(engine: FlutterEngine) {
         val file = File(path)
         if (!file.exists()) throw IOException("Device not found: $path")
 
+        // Reyeah-supplied tablets ship rooted with /system/bin/su available
+        // but with /dev/ttyS* nodes that aren't world-readable by default.
+        // Mirror factory.apk's SerialPort constructor: if the app process
+        // can't open the device, escalate to chmod 666 via su. If su isn't
+        // available (non-rooted dev tablets), this best-effort fails
+        // silently and the next SerialPort() throws a clean SecurityException.
+        if (!file.canRead() || !file.canWrite()) {
+            Log.d(TAG, "openSerialPort: $path is not r/w by app uid, attempting chmod 666 via su")
+            try {
+                val process = Runtime.getRuntime().exec("/system/bin/su")
+                val cmd = "chmod 666 ${file.absolutePath}\nexit\n"
+                process.outputStream.write(cmd.toByteArray())
+                process.outputStream.flush()
+                process.outputStream.close()
+                process.waitFor()
+                Log.d(TAG, "openSerialPort: chmod exited ${process.exitValue()}, " +
+                    "canRead=${file.canRead()} canWrite=${file.canWrite()}")
+            } catch (e: Throwable) {
+                Log.w(TAG, "openSerialPort: chmod fallback failed (${e.message}); " +
+                    "device probably isn't rooted")
+            }
+        }
+
         Log.d(TAG, "openSerialPort: opening $path@$baud")
         val sp = SerialPort(file, baud, 0)
         port = sp

@@ -160,6 +160,18 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           ),
           const SizedBox(height: 12),
 
+          // ── Clear board faults (CMD 0xA2) — admin recovery ─────────────
+          _buildAction(
+            icon: Icons.restart_alt_rounded,
+            label: 'Clear Board Faults',
+            subtitle: 'Sends 0xA2 to reset latched motor / sensor faults '
+                'on the Reyeah control board. Use this if a slot stopped '
+                'dispensing after an error.',
+            color: const Color(0xFFFF7043),
+            onTap: _clearBoardFaults,
+          ),
+          const SizedBox(height: 12),
+
           // ── List USB Devices (debug — identify the connected USB chip) ──
           _buildAction(
             icon: Icons.device_hub_rounded,
@@ -545,6 +557,68 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => _DispenseProgressDialog(slotNumber: slotNumber),
+    );
+  }
+
+  // ── Clear board faults (CMD 0xA2) ─────────────────────────────────────────
+
+  Future<void> _clearBoardFaults() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1A2B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(children: [
+          Icon(Icons.restart_alt_rounded, color: Color(0xFFFF7043)),
+          SizedBox(width: 10),
+          Text('Clear Board Faults',
+              style: TextStyle(color: Colors.white, fontSize: 17)),
+        ]),
+        content: FutureBuilder<DispenseResult>(
+          future: VendingMachineService.clearFaultsViaGate(),
+          builder: (_, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Row(children: [
+                SizedBox(width: 22, height: 22,
+                    child: CircularProgressIndicator(
+                        color: Color(0xFFFF7043), strokeWidth: 2.5)),
+                SizedBox(width: 14),
+                Expanded(child: Text(
+                  'Sending 0xA2 clear-fault command…',
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                )),
+              ]);
+            }
+            final result = snap.data;
+            final ok = result?.status == DispenseStatus.success;
+            return Row(children: [
+              Icon(
+                ok ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                color: ok ? Colors.greenAccent : Colors.redAccent,
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Text(
+                ok
+                    ? 'Sent. Faults should now be cleared on the board. '
+                        'Run a Test Dispense to confirm.'
+                    : 'Failed: ${result?.errorMessage ?? "Unknown error"}',
+                style: TextStyle(
+                  color: ok ? Colors.greenAccent : Colors.redAccent,
+                  fontSize: 13,
+                ),
+              )),
+            ]);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close',
+                style: TextStyle(color: Color(0xFF007ACC))),
+          ),
+        ],
+      ),
     );
   }
 
