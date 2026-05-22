@@ -22,10 +22,18 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
+    <!-- Foreground service for the SerialMonitorService priority anchor.
+         FOREGROUND_SERVICE_CONNECTED_DEVICE is the right type per Android 14+
+         since the service exists to keep the UART connection healthy.
+         (WAKE_LOCK is already declared earlier in this file.) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
     <application
         android:label="VMFS USA"
-        android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:name=".VmfsApplication"
+        android:icon="@mipmap/ic_launcher"
+        android:requestLegacyExternalStorage="true">
 
         <activity
             android:name=".MainActivity"
@@ -86,6 +94,15 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_provider_paths" />
         </provider>
+
+        <!-- Foreground service that keeps the kiosk process priority high
+             so Android's low-memory killer doesn't reap us. Notification
+             stays under the immersive bar, customers never see it. -->
+        <service
+            android:name=".SerialMonitorService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
 
         <!-- BootReceiver: relanza MainActivity cuando la tablet enciende tras
              corte de luz / reinicio. Sin esto el kiosk se queda en el launcher

@@ -6,6 +6,8 @@ import 'screens/idle_screen.dart';
 import 'screens/setup_wizard_screen.dart';
 import 'services/app_config.dart';
 import 'services/accessibility_settings.dart';
+import 'services/board_heartbeat.dart';
+import 'services/log_file_util.dart';
 import 'services/update_checker.dart';
 import 'widgets/accessibility_fab.dart';
 
@@ -30,9 +32,20 @@ Future<void> main() async {
   }
   await AppConfig.init();
 
+  // First entry in the on-disk log — gives field-debug log files a
+  // recognizable "process started" marker.
+  LogFileUtil.i('app.start');
+
   // Quietly poll vms-cloud for new APK releases. The idle screen shows a
   // discreet badge when one is ready.
   UpdateChecker.instance.startBackgroundChecks();
+
+  // Periodic CMD 0xE1 heartbeat against the Reyeah board — surfaces
+  // "board went silent / UART cable came loose" faster than waiting
+  // for a customer to attempt a vend and see nothing happen. Runs
+  // through the same single-flight gate the dispense flow uses, so
+  // it queues behind active dispenses instead of fighting on the TTY.
+  BoardHeartbeat.instance.start();
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   SystemChrome.setPreferredOrientations([
