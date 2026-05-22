@@ -504,11 +504,17 @@ class _BackendAdWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     if (ad.type == AdMediaType.image && ad.mediaUrl != null) {
       final url = _resolveUrl(ad.mediaUrl!);
-      return Image.network(
-        url,
+      // CachedNetworkImage handles disk+memory caching, redirect chains,
+      // and surfaces detailed errors via errorWidget. It also works
+      // around several quirks Flutter Web's bare Image.network has
+      // with cross-origin images.
+      return CachedNetworkImage(
+        imageUrl: url,
         fit: BoxFit.cover,
-        errorBuilder: (_, error, __) {
-          debugPrint('[ads] Image.network failed for "$url": $error');
+        fadeInDuration: const Duration(milliseconds: 200),
+        placeholder: (_, __) => _fallback(ad.title),
+        errorWidget: (_, failedUrl, error) {
+          debugPrint('[ads] image load failed for "$failedUrl": $error');
           return _fallback(ad.title);
         },
       );
