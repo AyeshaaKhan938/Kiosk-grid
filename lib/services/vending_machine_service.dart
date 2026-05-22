@@ -345,16 +345,30 @@ class VendingMachineService {
       );
     }
 
-    // 2. Write the delivery frame. Motor fires from the board logic.
+    // 2. Write the delivery frame.
     await TtySerial.write(buildDeliveryFrame(lineNumber));
 
-    // 3. Wait out the motor turn. 5 s covers every coil/spring slot we
-    //    have field data on. NO reads here — reads were one of the two
-    //    SIGSEGV sources.
+    // 3. Brief tolerant read. We don't care about the response — the
+    //    Reyeah board may or may not echo. What matters is that on
+    //    this hardware the kernel TTY layer doesn't physically drain
+    //    the queued OUTPUT until something reads from the device.
+    //    Without this nudge, the delivery frame sat in the write
+    //    buffer indefinitely and the motor never fired (v1.3.4/5/6
+    //    field reports). Reads themselves never crashed — the
+    //    previously diagnosed SIGSEGV was in close(), which is still
+    //    skipped.
+    try {
+      await TtySerial.read(timeout: const Duration(milliseconds: 500));
+    } catch (_) {
+      // A read failure here is fine; we already wrote the command.
+    }
+
+    // 4. Wait out the motor turn. 5 s covers every coil/spring slot we
+    //    have field data on.
     await Future.delayed(const Duration(seconds: 5));
 
-    // 4. NO close — close was the other SIGSEGV source. The leaked fd
-    //    is reclaimed by GC; next dispense opens its own.
+    // 5. NO close — close was the SIGSEGV source. The leaked fd is
+    //    reclaimed by GC; next dispense opens its own.
     return true;
   }
 
