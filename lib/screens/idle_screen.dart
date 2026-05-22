@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../models/advertisement.dart';
 import '../services/advertisement_service.dart';
+import '../services/app_config.dart';
 import '../services/update_checker.dart';
 import '../services/update_service.dart';
 import 'admin_config_screen.dart';
@@ -124,7 +125,14 @@ class _IdleScreenState extends State<IdleScreen>
     try {
       final ads = await AdvertisementService.fetchAds();
       if (mounted) {
-        final all = [...ads.screensaver, ...ads.top];
+        // Combine the two on-screen slots, but dedupe by ID so an ad
+        // configured into BOTH screensaver and top doesn't appear twice
+        // in the carousel.
+        final seen = <int>{};
+        final all = <Advertisement>[
+          for (final ad in [...ads.screensaver, ...ads.top])
+            if (seen.add(ad.id)) ad,
+        ];
         if (all.isNotEmpty) {
           setState(() => _backendAds = all);
           _startAdTimer();
@@ -478,28 +486,47 @@ class _BackendAdWidget extends StatelessWidget {
   final Advertisement ad;
   const _BackendAdWidget({required this.ad});
 
+  /// Resolve a possibly-relative media URL against the configured API
+  /// host. Laravel storage links are commonly returned as `/storage/...`
+  /// when the server isn't aware of its public hostname; Image.network
+  /// won't load those, so we prefix with the configured base URL host.
+  String _resolveUrl(String raw) {
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      return raw;
+    }
+    final base = AppConfig.apiBaseUrl;       // e.g. https://cloud.vmfsusa.com/api/v1
+    final origin = Uri.tryParse(base)?.origin ?? base;
+    final path = raw.startsWith('/') ? raw : '/$raw';
+    return '$origin$path';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (ad.type == AdMediaType.image && ad.mediaUrl != null) {
-      return Image.network(ad.mediaUrl!, fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _fallback(ad.title));
+      final url = _resolveUrl(ad.mediaUrl!);
+      // CachedNetworkImage handles disk+memory caching, redirect chains,
+      // and surfaces detailed errors via errorWidget. It also works
+      // around several quirks Flutter Web's bare Image.network has
+      // with cross-origin images.
+      return CachedNetworkImage(
+        imageUrl: url,
+        fit: BoxFit.cover,
+        fadeInDuration: const Duration(milliseconds: 200),
+        placeholder: (_, __) => _fallback(ad.title),
+        errorWidget: (_, failedUrl, error) {
+          debugPrint('[ads] image load failed for "$failedUrl": $error');
+          return _fallback(ad.title);
+        },
+      );
     }
     return _fallback(ad.title);
   }
 
-  Widget _fallback(String title) => Container(
-    decoration: const BoxDecoration(
-      gradient: LinearGradient(
-        colors: [Color(0xFF001230), Colors.black],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-    ),
-    child: Center(
-      child: Text(title,
-          style: const TextStyle(color: Colors.white38, fontSize: 20)),
-    ),
-  );
+  /// Silent fallback — pure black background, no text. Used when the
+  /// backend's image URL fails to load. The title is intentionally
+  /// not displayed because customers should never see a placeholder
+  /// label; either the ad renders or nothing renders.
+  Widget _fallback(String title) => const ColoredBox(color: Colors.black);
 }
 
 /// Small "Update available — v X.X.X" pill shown on the idle screen when

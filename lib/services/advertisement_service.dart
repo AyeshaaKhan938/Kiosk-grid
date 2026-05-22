@@ -1,5 +1,8 @@
 import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+
 import '../models/advertisement.dart';
 import 'app_config.dart';
 
@@ -34,29 +37,53 @@ class AdvertisementService {
     if (_cache != null &&
         _cacheTime != null &&
         DateTime.now().difference(_cacheTime!) < _cacheTtl) {
+      debugPrint('[ads] returning cached response '
+          '(${_cache!.screensaver.length} screensaver + '
+          '${_cache!.top.length} top)');
       return _cache!;
     }
 
     final no  = machineNo ?? _machineNo;
     final url = Uri.parse('$_baseUrl/machines/$no/advertisements');
+    debugPrint('[ads] GET $url');
 
     try {
       final response = await http
           .get(url, headers: {'Accept': 'application/json'})
           .timeout(const Duration(seconds: 8));
 
+      debugPrint('[ads] HTTP ${response.statusCode}, '
+          'body length ${response.body.length}');
+
       if (response.statusCode == 200) {
         final data = AdvertisementsResponse.fromJson(
           jsonDecode(response.body) as Map<String, dynamic>,
         );
+        debugPrint('[ads] parsed: group="${data.groupName}" '
+            'screensaver=${data.screensaver.length} '
+            'top=${data.top.length} '
+            'externalScreen=${data.externalScreen.length}');
+        if (data.isEmpty) {
+          debugPrint(
+              '[ads] response was parsed but has no ads in any slot — '
+              'check that the ad is added to a Group AND the Group is '
+              'tagged to machine $no in the admin UI.');
+        }
         _cache     = data;
         _cacheTime = DateTime.now();
         return data;
       }
 
-      // 404 = máquina sin grupo → devolver vacío silencioso
+      // Non-200 — log a short snippet of the body for the admin and fall
+      // through to the empty fallback (the idle screen will show demo
+      // slides instead).
+      final snippet = response.body.length > 200
+          ? '${response.body.substring(0, 200)}…'
+          : response.body;
+      debugPrint('[ads] non-200 response: $snippet');
       return AdvertisementsResponse.empty;
-    } catch (_) {
+    } catch (e, stack) {
+      debugPrint('[ads] fetch failed: $e\n$stack');
       // Sin conexión → devolver caché expirado si existe, si no vacío
       return _cache ?? AdvertisementsResponse.empty;
     }
