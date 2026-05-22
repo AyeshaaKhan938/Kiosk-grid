@@ -296,36 +296,27 @@ class VendingMachineService {
   // wired to the tablet's UART pins, not USB. This path uses the
   // android-serialport-api bridge in TtySerialChannel.kt.
 
-  /// Dispense via direct TTY serial — minimum-viable, crash-proof flow.
+  /// Dispense via direct TTY serial — factory-pattern flow.
   ///
-  /// Earlier versions did open → write → read echo → wait → write status
-  /// query → read status → close. Two of those native operations (the
-  /// status-query read and the close) were SIGSEGV-ing inside
-  /// libserial_port.so after the motor had already fired, taking the
-  /// whole activity down. The bug isn't in our Kotlin wrapper — it's in
-  /// the bundled JNI implementation, and a real fix means patching the
-  /// C source (not a same-day task).
+  /// Implementation mirrors factory.apk's `SerialPortUtils.onSaleSend()`
+  /// (confirmed via jadx decompile). Same ordering, same protocol,
+  /// same singleton-reuse model.
   ///
-  /// So this version stops calling the unreliable native paths. The
-  /// Reyeah Control Board fires the motor the moment it receives the
-  /// delivery frame, regardless of whether we read the echo. The echo
-  /// and status query were diagnostic nice-to-haves, not load-bearing.
-  ///
-  /// Flow:
-  ///   1. Open /dev/ttyS* (open is stable).
-  ///   2. Write CMD 0x41 (delivery). Motor spins from board logic.
-  ///   3. Sleep 5 s for the motor to physically complete.
-  ///   4. Return — NO reads, NO close.
-  ///
-  /// The leaked file descriptor is GC'd later; the next dispense's
-  /// open() gets a fresh fd regardless. Android's per-process ulimit is
-  /// thousands of fds, so even daily dispensing for a year stays well
-  /// inside the safe zone.
-  ///
-  /// Trade-off: we lose motor-fault detection from the status byte. The
-  /// motor either physically drops a product or it doesn't — the
-  /// operator and the customer can both see that. Slot-jam diagnosis
-  /// belongs to inventory + Test Dispense, not a UART response code.
+  ///   1. openSerialPort(path, 9600) — channel reuses the existing
+  ///      session if path + baud match; otherwise a fresh open with
+  ///      a residual-byte drain. A persistent ReadThread on the
+  ///      Kotlin side starts pumping inbound bytes into an in-process
+  ///      queue.
+  ///   2. Write delivery frame (CMD 0x41). Motor fires from the
+  ///      board's own logic.
+  ///   3. Best-effort drain of the rx queue (600 ms window). Bytes
+  ///      come from the in-process queue, never from a native fd —
+  ///      so this can't race with close. The motor fires whether
+  ///      the board echoes or not.
+  ///   4. Wait 5 s for the motor to physically complete.
+  ///   5. NO close here. The singleton stays open for the next
+  ///      dispense (factory pattern: open once, reuse forever). The
+  ///      port only closes on explicit admin teardown / app exit.
   static Future<bool> _sendDeliveryViaTty({
     required int lineNumber,
     void Function(DispenseStatus)? onProgress,
@@ -348,17 +339,13 @@ class VendingMachineService {
     // 2. Write the delivery frame.
     await TtySerial.write(buildDeliveryFrame(lineNumber));
 
-    // 3. Brief tolerant read. We don't care about the response — the
-    //    Reyeah board may or may not echo. What matters is that on
-    //    this hardware the kernel TTY layer doesn't physically drain
-    //    the queued OUTPUT until something reads from the device.
-    //    Without this nudge, the delivery frame sat in the write
-    //    buffer indefinitely and the motor never fired (v1.3.4/5/6
-    //    field reports). Reads themselves never crashed — the
-    //    previously diagnosed SIGSEGV was in close(), which is still
-    //    skipped.
+    // 3. Drain the inbound queue (echo / status from the board).
+    //    Bytes come from the channel's in-process queue populated by
+    //    the persistent ReadThread, not from a direct native read —
+    //    so this can never race with close(). Best-effort: motor
+    //    fires regardless of echo.
     try {
-      await TtySerial.read(timeout: const Duration(milliseconds: 500));
+      await TtySerial.read(timeout: const Duration(milliseconds: 600));
     } catch (_) {
       // A read failure here is fine; we already wrote the command.
     }
@@ -367,8 +354,9 @@ class VendingMachineService {
     //    have field data on.
     await Future.delayed(const Duration(seconds: 5));
 
-    // 5. NO close — close was the SIGSEGV source. The leaked fd is
-    //    reclaimed by GC; next dispense opens its own.
+    // 5. Intentionally NO close — singleton stays open for the next
+    //    dispense (factory pattern). Closing happens via explicit
+    //    admin teardown / app shutdown / TTY path change.
     return true;
   }
 
