@@ -1,5 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+
+import 'app_config.dart';
 
 /// Dart wrapper around the LogFileChannel native code.
 ///
@@ -109,4 +114,92 @@ class LogFileUtil {
       return '';
     }
   }
+
+  /// Uploads a log file to vms-cloud via multipart POST.
+  ///
+  /// Endpoint contract (backend implementation in vms-cloud Laravel):
+  ///   POST  $apiBaseUrl/machines/{machine_no}/logs
+  ///   Headers:
+  ///     Authorization: Bearer {MANAGEMENT_TOKEN}
+  ///     Accept: application/json
+  ///   Body (multipart/form-data):
+  ///     log    (the .log file)
+  ///   Response (200 OK):
+  ///     {"ok": true, "saved_path": "...", "id": 123}
+  ///
+  /// Returns an [UploadResult] indicating outcome — never throws.
+  /// Caller (admin UI) shows a snackbar based on the result.
+  static Future<UploadResult> uploadFile(String path) async {
+    if (!_isAndroid) {
+      return const UploadResult.error('Uploads only supported on Android.');
+    }
+    final file = File(path);
+    if (!await file.exists()) {
+      return UploadResult.error('Log file not found at $path');
+    }
+
+    final machineNo = AppConfig.machineNo;
+    if (machineNo.isEmpty) {
+      return const UploadResult.error(
+          'Machine number not configured — set it in Edit Configuration.');
+    }
+    final token = AppConfig.managementToken;
+    if (token.isEmpty) {
+      return const UploadResult.error(
+          'Management token not configured — set it in admin.');
+    }
+
+    final url = Uri.parse('${AppConfig.apiBaseUrl}/machines/$machineNo/logs');
+    final filename = path.split(RegExp(r'[/\\]')).last;
+    final sizeBytes = await file.length();
+
+    try {
+      final request = http.MultipartRequest('POST', url)
+        ..headers['Authorization'] = 'Bearer $token'
+        ..headers['Accept'] = 'application/json'
+        ..files.add(await http.MultipartFile.fromPath(
+          'log',
+          path,
+          filename: filename,
+        ));
+
+      final streamed =
+          await request.send().timeout(const Duration(seconds: 60));
+      final body = await streamed.stream.bytesToString();
+
+      if (streamed.statusCode >= 200 && streamed.statusCode < 300) {
+        return UploadResult.success(
+          filename: filename,
+          bytes: sizeBytes,
+          serverBody: body,
+        );
+      }
+      return UploadResult.error(
+          'Server returned HTTP ${streamed.statusCode}: '
+          '${body.length > 200 ? "${body.substring(0, 200)}…" : body}');
+    } catch (e) {
+      return UploadResult.error('Upload failed: $e');
+    }
+  }
+}
+
+/// Result of [LogFileUtil.uploadFile]. Pattern-match on [success] in
+/// the admin UI to decide success vs error UX.
+class UploadResult {
+  final bool success;
+  final String message;
+  final String? filename;
+  final int? bytes;
+
+  const UploadResult.success({
+    required this.filename,
+    required this.bytes,
+    String? serverBody,
+  })  : success = true,
+        message = 'Uploaded successfully.';
+
+  const UploadResult.error(this.message)
+      : success = false,
+        filename = null,
+        bytes = null;
 }

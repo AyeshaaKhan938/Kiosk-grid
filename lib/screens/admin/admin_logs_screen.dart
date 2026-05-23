@@ -30,6 +30,7 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
   String? _selectedPath;
   String _content = '';
   bool _loading = true;
+  bool _uploading = false;
   final _scrollCtrl = ScrollController();
 
   @override
@@ -77,6 +78,69 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
     });
   }
 
+  Future<void> _uploadToCloud(String path) async {
+    setState(() => _uploading = true);
+
+    // Show indeterminate progress dialog while the multipart POST is in
+    // flight. We don't have meaningful byte-level progress for a single
+    // POST without instrumenting the http client; spinner is fine.
+    final progressDialog = showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        backgroundColor: Color(0xFF0D1A2B),
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 22, height: 22,
+              child: CircularProgressIndicator(
+                  color: Color(0xFF42A5F5), strokeWidth: 2.5),
+            ),
+            SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                'Uploading log file to vms-cloud…',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final result = await LogFileUtil.uploadFile(path);
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(); // close progress
+    await progressDialog;
+
+    setState(() => _uploading = false);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: result.success
+            ? const Color(0xFF388E3C)
+            : Colors.redAccent.shade700,
+        duration: const Duration(seconds: 5),
+        content: Text(
+          result.success
+              ? 'Uploaded ${result.filename} (${_formatBytes(result.bytes ?? 0)}) — '
+                  'check vms-cloud admin → Kiosk Logs.'
+              : 'Upload failed: ${result.message}',
+          style: const TextStyle(fontSize: 13),
+        ),
+      ),
+    );
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
   Future<void> _copyPath() async {
     if (_selectedPath == null) return;
     await Clipboard.setData(ClipboardData(text: _selectedPath!));
@@ -111,6 +175,14 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
             icon: const Icon(Icons.refresh_rounded, color: Colors.white70),
             onPressed: _selectedPath != null && !_loading
                 ? () => _loadFile(_selectedPath!)
+                : null,
+          ),
+          IconButton(
+            tooltip: 'Send to vms-cloud',
+            icon: const Icon(Icons.cloud_upload_outlined,
+                color: Colors.white70),
+            onPressed: _selectedPath != null && !_loading && !_uploading
+                ? () => _uploadToCloud(_selectedPath!)
                 : null,
           ),
           IconButton(
