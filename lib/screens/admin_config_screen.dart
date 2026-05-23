@@ -2136,7 +2136,8 @@ class _DispenseProgressDialog extends StatefulWidget {
 class _DispenseProgressDialogState extends State<_DispenseProgressDialog> {
   _DispenseStage _stage = _DispenseStage.sending;
   String _errorMsg = '';
-  Timer? _stageTimer;
+  Timer? _motorTurningTimer;
+  Timer? _coolingDownTimer;
   Timer? _autoCloseTimer;
 
   @override
@@ -2146,11 +2147,21 @@ class _DispenseProgressDialogState extends State<_DispenseProgressDialog> {
     // motion even though the underlying TTY dispense is a single 5–7 s
     // call. These transitions are cosmetic — the real source of truth
     // is the DispenseResult that comes back from the service.
-    _stageTimer = Timer(const Duration(seconds: 1), () {
-      if (mounted) setState(() => _stage = _DispenseStage.motorTurning);
+    //
+    // Each timer only advances from the *previous* cosmetic stage. Without
+    // that guard, a fast-failing dispense (TTY open error in < 1 s) would
+    // set _stage = error, then 1 s later the timer would overwrite it back
+    // to motorTurning, then 5 s later to coolingDown — and the operator
+    // sees the red error flash and disappear, stuck forever on "Almost done".
+    _motorTurningTimer = Timer(const Duration(seconds: 1), () {
+      if (!mounted) return;
+      if (_stage == _DispenseStage.sending) {
+        setState(() => _stage = _DispenseStage.motorTurning);
+      }
     });
-    Timer(const Duration(seconds: 5), () {
-      if (mounted && _stage == _DispenseStage.motorTurning) {
+    _coolingDownTimer = Timer(const Duration(seconds: 5), () {
+      if (!mounted) return;
+      if (_stage == _DispenseStage.motorTurning) {
         setState(() => _stage = _DispenseStage.coolingDown);
       }
     });
@@ -2158,11 +2169,21 @@ class _DispenseProgressDialogState extends State<_DispenseProgressDialog> {
     _runDispense();
   }
 
+  void _cancelCosmeticTimers() {
+    _motorTurningTimer?.cancel();
+    _coolingDownTimer?.cancel();
+  }
+
   Future<void> _runDispense() async {
     try {
       final result =
           await VendingMachineService.testDispenseSlot(widget.slotNumber);
       if (!mounted) return;
+
+      // Belt-and-braces: cancel cosmetic timers before transitioning to a
+      // terminal stage so a timer that's already queued on the microtask
+      // loop can't slip through and overwrite success/error.
+      _cancelCosmeticTimers();
 
       if (result.status == DispenseStatus.success) {
         setState(() => _stage = _DispenseStage.success);
@@ -2180,6 +2201,7 @@ class _DispenseProgressDialogState extends State<_DispenseProgressDialog> {
       }
     } catch (e) {
       if (!mounted) return;
+      _cancelCosmeticTimers();
       setState(() {
         _stage = _DispenseStage.error;
         _errorMsg = 'Unexpected: $e';
@@ -2189,7 +2211,8 @@ class _DispenseProgressDialogState extends State<_DispenseProgressDialog> {
 
   @override
   void dispose() {
-    _stageTimer?.cancel();
+    _motorTurningTimer?.cancel();
+    _coolingDownTimer?.cancel();
     _autoCloseTimer?.cancel();
     super.dispose();
   }
