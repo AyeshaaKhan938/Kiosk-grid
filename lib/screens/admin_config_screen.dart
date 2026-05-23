@@ -9,6 +9,7 @@ import '../services/tty_serial.dart';
 import '../services/update_service.dart';
 import '../services/vending_machine_service.dart';
 import 'setup_wizard_screen.dart';
+import 'admin/admin_logs_screen.dart';
 import 'admin/admin_shell_screen.dart';
 
 /// Panel de administración oculto — accesible vía gesto secreto + PIN.
@@ -169,6 +170,21 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                 'dispensing after an error.',
             color: const Color(0xFFFF7043),
             onTap: _clearBoardFaults,
+          ),
+          const SizedBox(height: 12),
+
+          // ── View Logs (field debugging) ────────────────────────────────
+          _buildAction(
+            icon: Icons.article_outlined,
+            label: 'View Logs',
+            subtitle: 'Read the persistent log file: every dispense, '
+                'TTY operation, heartbeat, and error with timestamps. '
+                'Used when troubleshooting field issues.',
+            color: const Color(0xFF42A5F5),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminLogsScreen()),
+            ),
           ),
           const SizedBox(height: 12),
 

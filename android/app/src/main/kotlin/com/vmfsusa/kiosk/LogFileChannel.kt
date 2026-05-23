@@ -64,8 +64,44 @@ class LogFileChannel(private val context: Context, engine: FlutterEngine) {
                 }
                 "path" -> result.success(currentLogFile()?.absolutePath)
                 "listFiles" -> result.success(listLogFiles())
+                "readFile" -> {
+                    val path = call.argument<String>("path")
+                    val maxBytes = call.argument<Int>("maxBytes") ?: 256 * 1024
+                    ioThread.execute {
+                        val content = readFile(path, maxBytes)
+                        result.success(content)
+                    }
+                }
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    /**
+     * Read the tail of a log file. We cap at [maxBytes] (default 256 KB)
+     * because admin viewers shouldn't load megabytes of text into UI
+     * memory on a tablet. If the file is larger we return only the last
+     * [maxBytes] bytes prefixed with a "... [N bytes truncated]" marker.
+     */
+    private fun readFile(path: String?, maxBytes: Int): String {
+        if (path.isNullOrEmpty()) return ""
+        return try {
+            val file = File(path)
+            if (!file.exists()) return ""
+            val total = file.length()
+            if (total <= maxBytes) {
+                file.readText()
+            } else {
+                val skipped = total - maxBytes
+                file.inputStream().use { input ->
+                    input.skip(skipped)
+                    val tail = input.readBytes().toString(Charsets.UTF_8)
+                    "... [$skipped bytes truncated, showing last $maxBytes bytes]\n\n$tail"
+                }
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "readFile failed: ${e.message}")
+            ""
         }
     }
 
