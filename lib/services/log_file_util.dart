@@ -91,4 +91,22 @@ class LogFileUtil {
       return const [];
     }
   }
+
+  /// Reads a log file from disk and returns its contents as a single
+  /// string. Capped at [maxBytes] (default 256 KB) — files larger than
+  /// the cap return only their tail with a truncation marker, so the
+  /// admin UI never tries to render multi-MB blobs.
+  static Future<String> readFile(String path,
+      {int maxBytes = 256 * 1024}) async {
+    if (!_isAndroid) return '';
+    try {
+      final res = await _channel.invokeMethod<String>('readFile', {
+        'path': path,
+        'maxBytes': maxBytes,
+      });
+      return res ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
 }
