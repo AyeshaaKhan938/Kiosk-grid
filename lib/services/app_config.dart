@@ -29,6 +29,11 @@ class AppConfig {
   // tile so an operator can disable it if a bad release ever ships.
   static const _kAutoUpdate = 'cfg_auto_update';
 
+  // true → background LogAutoUploader pushes yesterday's (and older) log
+  // files to vms-cloud automatically, so the operator never has to walk
+  // up to the kiosk and tap "Send to vms-cloud" by hand.
+  static const _kAutoUploadLogs = 'cfg_auto_upload_logs';
+
   // Backend mode: 'vmscloud' | 'reyeah'
   static const _kBackendMode  = 'cfg_backend_mode';
 
@@ -169,6 +174,19 @@ class AppConfig {
 
   static Future<void> setAutoUpdate(bool value) async =>
       _prefs?.setBool(_kAutoUpdate, value);
+
+  /// Whether the background LogAutoUploader should ship log files to
+  /// vms-cloud on its own schedule. Defaults to true — once a kiosk is
+  /// deployed there's no realistic way to fetch logs by hand, and the
+  /// "Send to vms-cloud" button in admin → View Logs is for ad-hoc use
+  /// when someone is already in front of the machine. For day-to-day
+  /// support we want a constant trickle of logs landing in the cloud
+  /// admin panel without anyone touching the kiosk.
+  static bool get autoUploadLogs =>
+      _prefs?.getBool(_kAutoUploadLogs) ?? true;
+
+  static Future<void> setAutoUploadLogs(bool value) async =>
+      _prefs?.setBool(_kAutoUploadLogs, value);
 
   /// Path of the /dev/ttyS* device wired to the Reyeah Control Board.
   ///

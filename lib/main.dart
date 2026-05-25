@@ -8,6 +8,7 @@ import 'services/app_config.dart';
 import 'services/accessibility_settings.dart';
 import 'services/board_heartbeat.dart';
 import 'services/kiosk_lockdown.dart';
+import 'services/log_auto_uploader.dart';
 import 'services/log_file_util.dart';
 import 'services/update_checker.dart';
 import 'widgets/accessibility_fab.dart';
@@ -58,6 +59,11 @@ Future<void> main() async {
   // through the same single-flight gate the dispense flow uses, so
   // it queues behind active dispenses instead of fighting on the TTY.
   BoardHeartbeat.instance.start();
+
+  // Auto-ship log files to vms-cloud — first pass 60 s after launch,
+  // then every 6 hours. The operator can flip this off via admin →
+  // "Auto-upload logs" if logs ever need to stop flowing.
+  LogAutoUploader.instance.start();
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   SystemChrome.setPreferredOrientations([
