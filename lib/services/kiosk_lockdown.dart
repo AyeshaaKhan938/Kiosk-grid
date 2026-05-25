@@ -48,4 +48,49 @@ class KioskLockdown {
       return false;
     }
   }
+
+  /// Master kiosk-mode flag on the native side. When set to false, the
+  /// activity's onResume / onWindowFocusChanged stop re-pinning, the
+  /// immersive system-bar hiding is disabled, and Back / Home / Recents
+  /// keys pass through to Android normally.
+  ///
+  /// Used by the setup wizard so the admin can drop into Android
+  /// Settings → Wi-Fi during initial provisioning, then come back. After
+  /// the wizard saves its final step we flip this back to true and
+  /// kiosk lockdown takes over for the customer-facing screens.
+  static Future<bool> setKioskModeAllowed(bool allowed) async {
+    if (!_isSupported) return true;
+    try {
+      final ok = await _channel.invokeMethod<bool>(
+          'setKioskModeAllowed', {'allowed': allowed});
+      return ok ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Open Android's Wi-Fi settings page. Only works when kiosk mode is
+  /// off (Lock Task Mode blocks intents to other packages), so the
+  /// setup wizard calls [setKioskModeAllowed] false first.
+  static Future<bool> openWifiSettings() async {
+    if (!_isSupported) return false;
+    try {
+      final ok = await _channel.invokeMethod<bool>('openWifiSettings');
+      return ok ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Open Android's main Settings page. Same Lock Task Mode caveat as
+  /// [openWifiSettings].
+  static Future<bool> openSettings() async {
+    if (!_isSupported) return false;
+    try {
+      final ok = await _channel.invokeMethod<bool>('openSettings');
+      return ok ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
 }

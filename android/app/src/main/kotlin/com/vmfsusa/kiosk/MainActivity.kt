@@ -2,9 +2,11 @@ package com.vmfsusa.kiosk
 
 import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
@@ -45,6 +47,18 @@ class MainActivity : FlutterActivity() {
 
     private val kioskChannel = "vmfs.kiosk/lockdown"
 
+    /**
+     * When false, onResume / onWindowFocusChanged do NOT call
+     * `startLockTask`, immersive system-bar hiding is skipped, and the
+     * hardware Back / Home / Recents keys pass through to Android
+     * normally. Setup wizard's initial Wi-Fi step flips this off so the
+     * admin can drop into Android Settings, configure the network, and
+     * come back; the wizard turns it on again on completion. Defaults to
+     * true so subsequent boots (after isConfigured = true) come up
+     * locked down without any handshake.
+     */
+    private var kioskModeAllowed = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -60,18 +74,20 @@ class MainActivity : FlutterActivity() {
         // leave black space at the top/bottom).
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        applyImmersive()
+        if (kioskModeAllowed) applyImmersive()
     }
 
     override fun onResume() {
         super.onResume()
-        applyImmersive()
-        enableKioskMode()
+        if (kioskModeAllowed) {
+            applyImmersive()
+            enableKioskMode()
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) {
+        if (hasFocus && kioskModeAllowed) {
             // Anything that took focus away (dialog, A11y, peek-down) is gone —
             // immediately re-hide the bars and re-pin if pinning was broken.
             applyImmersive()
@@ -161,9 +177,12 @@ class MainActivity : FlutterActivity() {
      * Block the hardware Back / Home / Recents / Menu keys at the lowest
      * level. Consuming them here means Android never dispatches them to
      * the rest of the activity, so the Flutter side never sees them and
-     * the customer can't back out of the app.
+     * the customer can't back out of the app. Setup wizard (with
+     * [kioskModeAllowed] = false) bypasses this so the admin can
+     * actually reach Android Settings during initial Wi-Fi config.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (!kioskModeAllowed) return super.dispatchKeyEvent(event)
         return when (event.keyCode) {
             KeyEvent.KEYCODE_BACK,
             KeyEvent.KEYCODE_HOME,
@@ -222,8 +241,73 @@ class MainActivity : FlutterActivity() {
                         applyImmersive()
                         result.success(true)
                     }
+                    "setKioskModeAllowed" -> {
+                        val allowed =
+                            call.argument<Boolean>("allowed") ?: true
+                        kioskModeAllowed = allowed
+                        if (allowed) {
+                            // Switched ON — re-apply lockdown immediately so
+                            // the admin doesn't have to background+foreground
+                            // the app to see the bars disappear.
+                            applyImmersive()
+                            enableKioskMode()
+                        } else {
+                            // Switched OFF — drop out of Lock Task Mode so
+                            // intents to Android Settings (Wi-Fi config) work,
+                            // and let the system bars reappear so the admin
+                            // can actually navigate.
+                            try { stopLockTask() } catch (_: Throwable) {}
+                            showSystemBars()
+                        }
+                        result.success(true)
+                    }
+                    "openWifiSettings" -> {
+                        try {
+                            val intent = Intent(Settings.ACTION_WIFI_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(intent)
+                            result.success(true)
+                        } catch (t: Throwable) {
+                            result.error("INTENT_FAILED", t.message, null)
+                        }
+                    }
+                    "openSettings" -> {
+                        try {
+                            val intent = Intent(Settings.ACTION_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(intent)
+                            result.success(true)
+                        } catch (t: Throwable) {
+                            result.error("INTENT_FAILED", t.message, null)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    /**
+     * Re-show the status bar and navigation bar. Mirror-image of
+     * [applyImmersive] for the unpinned setup-mode case. Without this,
+     * flipping [kioskModeAllowed] off but the immersive listener still
+     * hiding bars on every redraw would leave the admin staring at a
+     * fullscreen app with no way to navigate.
+     */
+    private fun showSystemBars() {
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.show(WindowInsetsCompat.Type.systemBars())
+
+        // Drop the legacy fullscreen flag set so the OS goes back to
+        // rendering its own decor.
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+
+        // Disarm the re-hide listener and clear the gesture-exclusion
+        // rects so the OS reacts to swipes again.
+        @Suppress("DEPRECATION")
+        window.decorView.setOnSystemUiVisibilityChangeListener(null)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.decorView.systemGestureExclusionRects = emptyList()
+        }
     }
 }

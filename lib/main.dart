@@ -7,6 +7,7 @@ import 'screens/setup_wizard_screen.dart';
 import 'services/app_config.dart';
 import 'services/accessibility_settings.dart';
 import 'services/board_heartbeat.dart';
+import 'services/kiosk_lockdown.dart';
 import 'services/log_file_util.dart';
 import 'services/update_checker.dart';
 import 'widgets/accessibility_fab.dart';
@@ -35,6 +36,17 @@ Future<void> main() async {
   // First entry in the on-disk log — gives field-debug log files a
   // recognizable "process started" marker.
   LogFileUtil.i('app.start');
+
+  // If the kiosk has never finished its setup wizard, the admin still
+  // needs to reach Android Settings to connect Wi-Fi, grant permissions
+  // and finish provisioning. Tell the native side to keep Lock Task
+  // Mode + immersive + key-blocking OFF until SetupWizardScreen flips
+  // it back on at the end of the wizard. Configured installs come up
+  // pinned immediately — same as before, no behaviour change.
+  if (!AppConfig.isConfigured) {
+    await KioskLockdown.setKioskModeAllowed(false);
+    LogFileUtil.i('kiosk.lockdown.disabled_for_setup');
+  }
 
   // Quietly poll vms-cloud for new APK releases. The idle screen shows a
   // discreet badge when one is ready.
