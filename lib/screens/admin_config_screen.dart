@@ -8,6 +8,7 @@ import '../services/reyeah_service.dart';
 import '../services/tty_serial.dart';
 import '../services/update_service.dart';
 import '../services/vending_machine_service.dart';
+import '../widgets/onscreen_keypad.dart';
 import 'setup_wizard_screen.dart';
 import 'admin/admin_logs_screen.dart';
 import 'admin/admin_shell_screen.dart';
@@ -509,8 +510,10 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             const SizedBox(height: 14),
             TextField(
               controller: ctrl,
+              readOnly: true,
+              showCursor: true,
+              enableInteractiveSelection: false,
               keyboardType: TextInputType.number,
-              autofocus: true,
               textAlign: TextAlign.center,
               style: const TextStyle(
                   color: Colors.white, fontSize: 22, letterSpacing: 4),
@@ -528,6 +531,14 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                   borderSide: const BorderSide(
                       color: Color(0xFF4CAF50), width: 1.5),
                 ),
+              ),
+              onTap: () => showKeypad(
+                context,
+                controller: ctrl,
+                mode: KeypadMode.numeric,
+                maxLength: 2,
+                title: 'SLOT NUMBER',
+                hint: '1 – 99',
               ),
             ),
           ],
@@ -1421,6 +1432,9 @@ class _LotteryTokenPanelState extends State<_LotteryTokenPanel> {
             Expanded(
               child: TextField(
                 controller: _ctrl,
+                readOnly: true,
+                showCursor: true,
+                enableInteractiveSelection: false,
                 obscureText: _obscure,
                 style: const TextStyle(color: Colors.white, fontSize: 13,
                     fontFamily: 'monospace'),
@@ -1447,7 +1461,15 @@ class _LotteryTokenPanelState extends State<_LotteryTokenPanel> {
                     onPressed: () => setState(() => _obscure = !_obscure),
                   ),
                 ),
-                onChanged: (_) => setState(() => _saved = null),
+                onTap: () => showKeypad(
+                  context,
+                  controller: _ctrl,
+                  mode: KeypadMode.alphanumeric,
+                  obscureText: _obscure,
+                  title: 'LOTTERY DRAW TOKEN',
+                  hint: 'Per-lottery token from vms-cloud',
+                  onCommitted: (_) => setState(() => _saved = null),
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -1579,6 +1601,9 @@ class _ManagementTokenPanelState extends State<_ManagementTokenPanel> {
             Expanded(
               child: TextField(
                 controller: _ctrl,
+                readOnly: true,
+                showCursor: true,
+                enableInteractiveSelection: false,
                 obscureText: _obscure,
                 style: const TextStyle(color: Colors.white, fontSize: 13,
                     fontFamily: 'monospace'),
@@ -1605,7 +1630,15 @@ class _ManagementTokenPanelState extends State<_ManagementTokenPanel> {
                     onPressed: () => setState(() => _obscure = !_obscure),
                   ),
                 ),
-                onChanged: (_) => setState(() => _saved = null),
+                onTap: () => showKeypad(
+                  context,
+                  controller: _ctrl,
+                  mode: KeypadMode.alphanumeric,
+                  obscureText: _obscure,
+                  title: 'MANAGEMENT TOKEN',
+                  hint: 'Bearer token from vms-cloud settings',
+                  onCommitted: (_) => setState(() => _saved = null),
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -1881,6 +1914,9 @@ class _ReyeahCredentialsPanelState extends State<_ReyeahCredentialsPanel> {
         const SizedBox(height: 6),
         TextField(
           controller: ctrl,
+          readOnly: true,
+          showCursor: true,
+          enableInteractiveSelection: false,
           obscureText: obscure,
           style: const TextStyle(color: Colors.white, fontSize: 13),
           decoration: InputDecoration(
@@ -1914,6 +1950,14 @@ class _ReyeahCredentialsPanelState extends State<_ReyeahCredentialsPanel> {
               borderSide: const BorderSide(
                   color: Color(0xFF00BCD4), width: 1.5),
             ),
+          ),
+          onTap: () => showKeypad(
+            context,
+            controller: ctrl,
+            mode: KeypadMode.alphanumeric,
+            obscureText: obscure,
+            title: label.toUpperCase(),
+            hint: hint,
           ),
         ),
       ],
@@ -1954,9 +1998,11 @@ Future<void> showAdminPinDialog(BuildContext context) async {
             const SizedBox(height: 20),
             TextField(
               controller: controller,
+              readOnly: true,
+              showCursor: true,
+              enableInteractiveSelection: false,
               obscureText: true,
               keyboardType: TextInputType.number,
-              autofocus: true,
               textAlign: TextAlign.center,
               maxLength: 8,
               style: const TextStyle(
@@ -1984,8 +2030,21 @@ Future<void> showAdminPinDialog(BuildContext context) async {
                       const BorderSide(color: Colors.redAccent),
                 ),
               ),
-              onSubmitted: (_) => _checkPin(
-                  ctx, controller.text, (e) => setDialogState(() => error = e)),
+              onTap: () async {
+                await showKeypad(
+                  ctx,
+                  controller: controller,
+                  mode: KeypadMode.numeric,
+                  maxLength: 8,
+                  obscureText: true,
+                  title: 'ADMIN PIN',
+                  hint: '••••',
+                  submitLabel: 'ENTER',
+                );
+                if (!ctx.mounted) return;
+                _checkPin(ctx, controller.text,
+                    (e) => setDialogState(() => error = e));
+              },
             ),
           ],
         ),

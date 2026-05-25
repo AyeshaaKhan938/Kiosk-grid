@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/app_config.dart';
 import '../services/reyeah_service.dart';
+import '../widgets/onscreen_keypad.dart';
 import 'idle_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1230,12 +1231,22 @@ class _WizardField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Pick the keypad layout from the requested keyboard type. Reyeah
+    // tablets have no system IME — every field opens our keypad sheet on
+    // tap regardless of `keyboardType`, which is otherwise ignored.
+    final KeypadMode mode = (keyboardType == TextInputType.number ||
+            keyboardType == TextInputType.phone)
+        ? KeypadMode.numeric
+        : KeypadMode.alphanumeric;
+
     return TextFormField(
       controller: controller,
+      readOnly: true,
+      showCursor: true,
+      enableInteractiveSelection: false,
       obscureText: obscure,
       keyboardType: keyboardType,
       enabled: enabled,
-      onChanged: onChanged,
       validator: validator,
       style: TextStyle(
         color: enabled ? Colors.white : Colors.white38,
@@ -1275,6 +1286,17 @@ class _WizardField extends StatelessWidget {
         ),
         errorStyle: const TextStyle(color: Colors.redAccent, fontSize: 12),
       ),
+      onTap: enabled
+          ? () => showKeypad(
+                context,
+                controller: controller,
+                mode: mode,
+                obscureText: obscure,
+                title: label.toUpperCase(),
+                hint: hint,
+                onCommitted: onChanged,
+              )
+          : null,
     );
   }
 }

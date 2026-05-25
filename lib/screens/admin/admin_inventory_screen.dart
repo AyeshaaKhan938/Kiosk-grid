@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/admin_api_service.dart';
+import '../../widgets/onscreen_keypad.dart';
 
 /// Laravel devuelve price como String ("2.50") o num. Parseamos ambos.
 double _parsePrice(dynamic v) {
@@ -378,6 +379,9 @@ class _SlotEditorSheetState extends State<_SlotEditorSheet> {
             const SizedBox(height: 8),
             TextField(
               controller: _priceCtrl,
+              readOnly: true,
+              showCursor: true,
+              enableInteractiveSelection: false,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
@@ -396,6 +400,13 @@ class _SlotEditorSheetState extends State<_SlotEditorSheet> {
                     borderSide: BorderSide.none),
                 contentPadding: const EdgeInsets.symmetric(
                     horizontal: 14, vertical: 14),
+              ),
+              onTap: () => showKeypad(
+                context,
+                controller: _priceCtrl,
+                mode: KeypadMode.numericDecimal,
+                title: 'PRICE',
+                hint: '0.00',
               ),
             ),
             const SizedBox(height: 20),
@@ -555,7 +566,6 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
   List<Map<String, dynamic>> _products = [];
   bool   _loading = true;
   String? _error;
-  String  _query  = '';
   final _searchCtrl = TextEditingController();
 
   @override
@@ -615,13 +625,17 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
               // Search
               TextField(
                 controller: _searchCtrl,
-                autofocus: false,
-                onChanged: (v) {
-                  _query = v;
-                  Future.delayed(const Duration(milliseconds: 400), () {
-                    if (_query == v) _fetch(v.isEmpty ? null : v);
-                  });
-                },
+                readOnly: true,
+                showCursor: true,
+                enableInteractiveSelection: false,
+                onTap: () => showKeypad(
+                  context,
+                  controller: _searchCtrl,
+                  mode: KeypadMode.alphanumeric,
+                  title: 'SEARCH PRODUCTS',
+                  hint: 'Name or SKU',
+                  onCommitted: (v) => _fetch(v.isEmpty ? null : v),
+                ),
                 decoration: InputDecoration(
                   prefixIcon: Icon(Icons.search_rounded,
                       color: cs.onSurface.withValues(alpha: 0.5), size: 20),
