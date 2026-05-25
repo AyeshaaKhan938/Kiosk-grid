@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/admin_api_service.dart';
+import '../../widgets/onscreen_keypad.dart';
 
 /// Pantalla de gestión de productos del catálogo.
 /// Permite crear nuevos productos y editar los existentes directamente
@@ -89,12 +90,20 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: TextField(
             controller: _searchCtrl,
-            onChanged: (v) {
-              _query = v;
-              Future.delayed(const Duration(milliseconds: 400), () {
-                if (_query == v) _load(page: 1, search: v.isEmpty ? null : v);
-              });
-            },
+            readOnly: true,
+            showCursor: true,
+            enableInteractiveSelection: false,
+            onTap: () => showKeypad(
+              context,
+              controller: _searchCtrl,
+              mode: KeypadMode.alphanumeric,
+              title: 'SEARCH PRODUCTS',
+              hint: 'Name, SKU or brand',
+              onCommitted: (v) {
+                _query = v;
+                _load(page: 1, search: v.isEmpty ? null : v);
+              },
+            ),
             decoration: InputDecoration(
               prefixIcon: Icon(Icons.search_rounded,
                   color: cs.onSurface.withValues(alpha: 0.5), size: 20),
@@ -545,6 +554,9 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
               const SizedBox(height: 6),
               TextFormField(
                 controller: _descCtrl,
+                readOnly: true,
+                showCursor: true,
+                enableInteractiveSelection: false,
                 maxLines: 3,
                 style: TextStyle(color: cs.onSurface, fontSize: 13),
                 decoration: InputDecoration(
@@ -557,6 +569,13 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide.none),
                   contentPadding: const EdgeInsets.all(14),
+                ),
+                onTap: () => showKeypad(
+                  context,
+                  controller: _descCtrl,
+                  mode: KeypadMode.alphanumeric,
+                  title: 'DESCRIPTION',
+                  hint: 'Optional product description',
                 ),
               ),
               const SizedBox(height: 16),
@@ -635,8 +654,24 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
     String? Function(String?)? validator,
   }) {
     final cs = Theme.of(context).colorScheme;
+    // Pick a keypad layout based on the requested kbd type. Numeric
+    // fields (price, quantity) get the 3×4 numeric pad with an optional
+    // decimal point; everything else gets the alphanumeric keypad.
+    final KeypadMode mode;
+    if (keyboardType == TextInputType.number ||
+        keyboardType == TextInputType.phone) {
+      mode = KeypadMode.numeric;
+    } else if (keyboardType ==
+        const TextInputType.numberWithOptions(decimal: true)) {
+      mode = KeypadMode.numericDecimal;
+    } else {
+      mode = KeypadMode.alphanumeric;
+    }
     return TextFormField(
       controller: controller,
+      readOnly: true,
+      showCursor: true,
+      enableInteractiveSelection: false,
       keyboardType: keyboardType,
       inputFormatters: inputFormatters,
       validator: validator,
@@ -669,6 +704,13 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         errorStyle: TextStyle(color: cs.error, fontSize: 11),
+      ),
+      onTap: () => showKeypad(
+        context,
+        controller: controller,
+        mode: mode,
+        title: hint.toUpperCase(),
+        hint: hint,
       ),
     );
   }

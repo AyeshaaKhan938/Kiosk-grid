@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/machine_slot.dart';
 import '../services/api_service.dart';
+import '../widgets/onscreen_keypad.dart';
 import 'result_screen.dart';
 
 /// Chevrolet / Detroit Tigers branded lottery code entry screen.
@@ -306,10 +307,12 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
                             // controller directly so the customer never
                             // needs a system IME (Reyeah tablets don't
                             // ship one).
-                            _LotteryKeypad(
+                            OnScreenKeypad(
                               controller: _codeCtrl,
+                              mode:       KeypadMode.alphanumeric,
                               scale:      scale,
                               enabled:    _state != _State.validating,
+                              maxLength:  20,
                               onChanged:  () => setState(() {
                                 if (_state == _State.error) {
                                   _state = _State.idle;
@@ -535,147 +538,3 @@ class _BackButton extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// On-screen keypad
-//
-// Renders directly inside the lottery-code screen so the customer can enter
-// their code without a system IME. Reyeah ships their tablets without any
-// keyboard app installed, so a `TextField` alone never shows a keyboard for
-// the customer to type on — this widget is the entire input surface.
-//
-// Layout: 4 rows × 10 flex-units each.
-//   row 1: 0–9
-//   row 2: Q W E R T Y U I O P
-//   row 3: A S D F G H J K L  ⌫
-//   row 4: Z X C V B N M  ENTER (flex 3)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _LotteryKeypad extends StatelessWidget {
-  final TextEditingController controller;
-  final double scale;
-  final bool enabled;
-  final VoidCallback onChanged;
-  final VoidCallback onSubmit;
-
-  const _LotteryKeypad({
-    required this.controller,
-    required this.scale,
-    required this.enabled,
-    required this.onChanged,
-    required this.onSubmit,
-  });
-
-  static const _row1 = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
-  static const _row2 = ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'];
-  static const _row3 = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'];
-  static const _row4 = ['Z', 'X', 'C', 'V', 'B', 'N', 'M'];
-
-  static const int _maxLen = 20;
-
-  void _append(String ch) {
-    if (controller.text.length >= _maxLen) return;
-    final newText = controller.text + ch;
-    controller.value = TextEditingValue(
-      text: newText,
-      selection: TextSelection.collapsed(offset: newText.length),
-    );
-    onChanged();
-  }
-
-  void _backspace() {
-    final t = controller.text;
-    if (t.isEmpty) return;
-    final newText = t.substring(0, t.length - 1);
-    controller.value = TextEditingValue(
-      text: newText,
-      selection: TextSelection.collapsed(offset: newText.length),
-    );
-    onChanged();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final keyH   = scale * 0.105;
-    final gap    = scale * 0.010;
-    final radius = scale * 0.012;
-    final font   = scale * 0.052;
-
-    Widget keyCell({
-      String? label,
-      Widget? child,
-      int flex = 1,
-      Color? bg,
-      VoidCallback? onTap,
-    }) {
-      final defaultTap = label != null ? () => _append(label) : null;
-      final effectiveTap = enabled ? (onTap ?? defaultTap) : null;
-      return Expanded(
-        flex: flex,
-        child: Padding(
-          padding: EdgeInsets.all(gap / 2),
-          child: SizedBox(
-            height: keyH,
-            child: Material(
-              color: bg ?? Colors.white.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(radius),
-              child: InkWell(
-                onTap: effectiveTap,
-                borderRadius: BorderRadius.circular(radius),
-                child: Center(
-                  child: child ??
-                      Text(
-                        label ?? '',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: font,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    Row letters(List<String> chars) =>
-        Row(children: [for (final c in chars) keyCell(label: c)]);
-
-    return Padding(
-      padding: EdgeInsets.only(top: scale * 0.015),
-      child: Column(
-        children: [
-          letters(_row1),
-          letters(_row2),
-          Row(children: [
-            for (final c in _row3) keyCell(label: c),
-            keyCell(
-              bg: Colors.white.withValues(alpha: 0.18),
-              onTap: _backspace,
-              child: Icon(Icons.backspace_outlined,
-                  color: Colors.white, size: font * 1.1),
-            ),
-          ]),
-          Row(children: [
-            for (final c in _row4) keyCell(label: c),
-            keyCell(
-              flex: 3,
-              bg: const Color(0xFFD32F2F),
-              onTap: onSubmit,
-              child: Text(
-                'ENTER',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: font * 0.85,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2,
-                ),
-              ),
-            ),
-          ]),
-        ],
-      ),
-    );
-  }
-}
