@@ -142,6 +142,10 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           _buildSimulateToggle(),
           const SizedBox(height: 12),
 
+          // ── Toggle: Auto-update ────────────────────────────────────────
+          _buildAutoUpdateToggle(),
+          const SizedBox(height: 12),
+
           // ── Test USB connection ────────────────────────────────────────
           _buildAction(
             icon: Icons.usb_rounded,
@@ -410,6 +414,64 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             activeTrackColor: const Color(0xFFFF9800).withValues(alpha: 0.4),
             onChanged: (val) async {
               await AppConfig.setSimulateDispense(val);
+              setState(() {});
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Auto-update toggle ────────────────────────────────────────────────────
+
+  Widget _buildAutoUpdateToggle() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1A2B),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFF388E3C).withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFF388E3C).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.cloud_sync_outlined,
+                color: Color(0xFF388E3C), size: 22),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Auto-update',
+                    style: TextStyle(
+                        color: Color(0xFF388E3C),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15)),
+                const SizedBox(height: 3),
+                Text(
+                  AppConfig.autoUpdate
+                      ? 'ON — new APKs download + install silently (no operator interaction)'
+                      : 'OFF — manual updates only via "Check for Updates"',
+                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: AppConfig.autoUpdate,
+            activeThumbColor: const Color(0xFF388E3C),
+            activeTrackColor: const Color(0xFF388E3C).withValues(alpha: 0.4),
+            onChanged: (val) async {
+              await AppConfig.setAutoUpdate(val);
               setState(() {});
             },
           ),
