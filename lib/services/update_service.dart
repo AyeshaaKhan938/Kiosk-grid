@@ -217,6 +217,22 @@ class UpdateService {
     }
   }
 
+  /// Silent install via `su pm install -r`. The Reyeah tablets are
+  /// pre-rooted so this path works without user interaction — same
+  /// trick the factory APK uses for its OTA updates. Returns false if
+  /// su isn't granted or pm fails; callers should fall back to
+  /// [installApk] for the dialog-based flow.
+  static Future<bool> installApkSilent(String path) async {
+    if (!_isAndroid) return false;
+    try {
+      return (await _channel.invokeMethod<bool>(
+              'installApkSilent', {'path': path})) ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Convenience: full check → download → install pipeline.
   /// Returns the [UpdateInfo] for the version that's about to be installed,
   /// or `UpdateInfo.none()` if no update was available.

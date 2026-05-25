@@ -73,6 +73,12 @@ class VendingMachineService {
   static DateTime? _lastDispenseEndedAt;
   static const _kCooldownMs = 1500;
 
+  /// True iff a dispense (customer, admin test, or heartbeat) is mid-flight.
+  /// Used by the background OTA auto-installer to wait for a quiet moment
+  /// before reinstalling — we don't want `pm install -r` to kill our
+  /// process in the middle of a motor turn.
+  static bool get isBusy => _inFlight != null;
+
   // ── Constructor de tramas ─────────────────────────────────────────────────
 
   /// Construye la trama binaria para cualquier comando.

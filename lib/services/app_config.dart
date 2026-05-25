@@ -24,6 +24,11 @@ class AppConfig {
   // true → saltar USB serial real y simular despacho exitoso (pruebas)
   static const _kSimulateDispense = 'cfg_simulate_dispense';
 
+  // true → background UpdateChecker auto-downloads + auto-installs new APKs
+  // without any admin interaction. Kill switch lives in admin → "Auto-update"
+  // tile so an operator can disable it if a bad release ever ships.
+  static const _kAutoUpdate = 'cfg_auto_update';
+
   // Backend mode: 'vmscloud' | 'reyeah'
   static const _kBackendMode  = 'cfg_backend_mode';
 
@@ -152,6 +157,18 @@ class AppConfig {
 
   static Future<void> setSimulateDispense(bool value) async =>
       _prefs?.setBool(_kSimulateDispense, value);
+
+  /// Whether the background UpdateChecker should download + install new
+  /// APKs automatically. Defaults to true — the kiosk runs unattended, and
+  /// without auto-install the only path to a new release would be the
+  /// hidden admin panel + manual tap, which defeats the point of OTA.
+  /// The admin "Auto-update" tile flips this off if a bad release ever
+  /// needs to be quarantined until we ship a fix.
+  static bool get autoUpdate =>
+      _prefs?.getBool(_kAutoUpdate) ?? true;
+
+  static Future<void> setAutoUpdate(bool value) async =>
+      _prefs?.setBool(_kAutoUpdate, value);
 
   /// Path of the /dev/ttyS* device wired to the Reyeah Control Board.
   ///
