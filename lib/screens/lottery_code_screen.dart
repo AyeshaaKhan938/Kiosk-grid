@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../models/machine_slot.dart';
 import '../services/api_service.dart';
 import 'result_screen.dart';
@@ -15,9 +14,10 @@ import 'result_screen.dart';
 ///
 /// Customer flow:
 ///   1. They scan the box's QR → register with Chevy
-///   2. They type the unique code into the big white input
-///   3. They press the keyboard Enter / Done key (no on-screen submit
-///      button — by design)
+///   2. They tap their unique code on the built-in on-screen keypad
+///      (Reyeah tablets ship with no system IME installed, so we render
+///      our own — no dependency on the device's keyboard config).
+///   3. They tap the big red ENTER key on the keypad.
 ///   4. We validate and hand off to [ResultScreen] which dispenses + shows
 ///      the THANK YOU screen.
 class LotteryCodeScreen extends StatefulWidget {
@@ -281,20 +281,14 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
                               ),
                             ),
 
-                            // White input field.
+                            // White input field — read-only so the system
+                            // IME never tries to appear. All input comes
+                            // from the on-screen keypad below.
                             _CodeInput(
                               controller: _codeCtrl,
                               focusNode:  _focusNode,
                               enabled:    _state != _State.validating,
                               scale:      scale,
-                              onChanged:  (_) => setState(() {
-                                if (_state == _State.error) {
-                                  _state = _State.idle;
-                                }
-                              }),
-                              onSubmitted: (_) {
-                                if (_canSubmit) _validate();
-                              },
                             ),
 
                             // Compact status / error line.
@@ -306,6 +300,24 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
                                     msg: _errorMsg,
                                     scale: scale),
                               ),
+                            ),
+
+                            // Custom on-screen keypad — drives the
+                            // controller directly so the customer never
+                            // needs a system IME (Reyeah tablets don't
+                            // ship one).
+                            _LotteryKeypad(
+                              controller: _codeCtrl,
+                              scale:      scale,
+                              enabled:    _state != _State.validating,
+                              onChanged:  () => setState(() {
+                                if (_state == _State.error) {
+                                  _state = _State.idle;
+                                }
+                              }),
+                              onSubmit:   () {
+                                if (_canSubmit) _validate();
+                              },
                             ),
                           ],
                         ),
@@ -387,16 +399,12 @@ class _CodeInput extends StatelessWidget {
   final FocusNode focusNode;
   final bool enabled;
   final double scale;
-  final ValueChanged<String> onChanged;
-  final ValueChanged<String> onSubmitted;
 
   const _CodeInput({
     required this.controller,
     required this.focusNode,
     required this.enabled,
     required this.scale,
-    required this.onChanged,
-    required this.onSubmitted,
   });
 
   @override
@@ -411,13 +419,13 @@ class _CodeInput extends StatelessWidget {
         controller: controller,
         focusNode:  focusNode,
         enabled:    enabled,
-        autofocus:  true,
-        textCapitalization: TextCapitalization.characters,
-        textInputAction: TextInputAction.go,
-        inputFormatters: [
-          _UpperCase(),
-          LengthLimitingTextInputFormatter(20),
-        ],
+        // readOnly + showCursor + disabled interactive-selection means
+        // the system IME is never asked to appear (which is the whole
+        // point — Reyeah tablets don't have one). The user can still see
+        // a blinking cursor at the end of their input so it feels live.
+        readOnly: true,
+        showCursor: true,
+        enableInteractiveSelection: false,
         style: TextStyle(
           color: Colors.black,
           fontSize: scale * 0.075,
@@ -430,8 +438,6 @@ class _CodeInput extends StatelessWidget {
           border: InputBorder.none,
           contentPadding: EdgeInsets.zero,
         ),
-        onChanged:   onChanged,
-        onSubmitted: onSubmitted,
       ),
     );
   }
@@ -529,9 +535,147 @@ class _BackButton extends StatelessWidget {
   }
 }
 
-class _UpperCase extends TextInputFormatter {
+// ─────────────────────────────────────────────────────────────────────────────
+// On-screen keypad
+//
+// Renders directly inside the lottery-code screen so the customer can enter
+// their code without a system IME. Reyeah ships their tablets without any
+// keyboard app installed, so a `TextField` alone never shows a keyboard for
+// the customer to type on — this widget is the entire input surface.
+//
+// Layout: 4 rows × 10 flex-units each.
+//   row 1: 0–9
+//   row 2: Q W E R T Y U I O P
+//   row 3: A S D F G H J K L  ⌫
+//   row 4: Z X C V B N M  ENTER (flex 3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LotteryKeypad extends StatelessWidget {
+  final TextEditingController controller;
+  final double scale;
+  final bool enabled;
+  final VoidCallback onChanged;
+  final VoidCallback onSubmit;
+
+  const _LotteryKeypad({
+    required this.controller,
+    required this.scale,
+    required this.enabled,
+    required this.onChanged,
+    required this.onSubmit,
+  });
+
+  static const _row1 = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+  static const _row2 = ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'];
+  static const _row3 = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'];
+  static const _row4 = ['Z', 'X', 'C', 'V', 'B', 'N', 'M'];
+
+  static const int _maxLen = 20;
+
+  void _append(String ch) {
+    if (controller.text.length >= _maxLen) return;
+    final newText = controller.text + ch;
+    controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newText.length),
+    );
+    onChanged();
+  }
+
+  void _backspace() {
+    final t = controller.text;
+    if (t.isEmpty) return;
+    final newText = t.substring(0, t.length - 1);
+    controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newText.length),
+    );
+    onChanged();
+  }
+
   @override
-  TextEditingValue formatEditUpdate(TextEditingValue old, TextEditingValue v) {
-    return v.copyWith(text: v.text.toUpperCase());
+  Widget build(BuildContext context) {
+    final keyH   = scale * 0.105;
+    final gap    = scale * 0.010;
+    final radius = scale * 0.012;
+    final font   = scale * 0.052;
+
+    Widget keyCell({
+      String? label,
+      Widget? child,
+      int flex = 1,
+      Color? bg,
+      VoidCallback? onTap,
+    }) {
+      final defaultTap = label != null ? () => _append(label) : null;
+      final effectiveTap = enabled ? (onTap ?? defaultTap) : null;
+      return Expanded(
+        flex: flex,
+        child: Padding(
+          padding: EdgeInsets.all(gap / 2),
+          child: SizedBox(
+            height: keyH,
+            child: Material(
+              color: bg ?? Colors.white.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(radius),
+              child: InkWell(
+                onTap: effectiveTap,
+                borderRadius: BorderRadius.circular(radius),
+                child: Center(
+                  child: child ??
+                      Text(
+                        label ?? '',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: font,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    Row letters(List<String> chars) =>
+        Row(children: [for (final c in chars) keyCell(label: c)]);
+
+    return Padding(
+      padding: EdgeInsets.only(top: scale * 0.015),
+      child: Column(
+        children: [
+          letters(_row1),
+          letters(_row2),
+          Row(children: [
+            for (final c in _row3) keyCell(label: c),
+            keyCell(
+              bg: Colors.white.withValues(alpha: 0.18),
+              onTap: _backspace,
+              child: Icon(Icons.backspace_outlined,
+                  color: Colors.white, size: font * 1.1),
+            ),
+          ]),
+          Row(children: [
+            for (final c in _row4) keyCell(label: c),
+            keyCell(
+              flex: 3,
+              bg: const Color(0xFFD32F2F),
+              onTap: onSubmit,
+              child: Text(
+                'ENTER',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: font * 0.85,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 2,
+                ),
+              ),
+            ),
+          ]),
+        ],
+      ),
+    );
   }
 }
