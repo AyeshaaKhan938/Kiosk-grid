@@ -2,6 +2,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/app_config.dart';
+import '../services/kiosk_lockdown.dart';
 import '../services/reyeah_service.dart';
 import '../widgets/onscreen_keypad.dart';
 import 'idle_screen.dart';
@@ -114,6 +115,14 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
         language:        'en',
       );
     }
+
+    if (!mounted) return;
+
+    // Setup is complete — turn the kiosk lockdown back ON so the very
+    // next screen (idle / customer-facing) is pinned, immersive, and
+    // can't be backed out of. Without this, the kiosk would stay
+    // unlocked from the wizard's initial Wi-Fi step forever.
+    await KioskLockdown.setKioskModeAllowed(true);
 
     if (!mounted) return;
 
@@ -435,13 +444,16 @@ class _StepNetworkState extends State<_StepNetwork> {
                 icon: Icons.settings_rounded,
                 label: 'Open Wi-Fi Settings',
                 onTap: () async {
-                  // Abre los ajustes de WiFi del sistema Android
-                  const platform = MethodChannel('vmfs/system');
-                  try {
-                    await platform.invokeMethod('openWifiSettings');
-                  } catch (_) {
-                    // Canal no implementado en web/desktop — ignorar
-                  }
+                  // Drop out of Lock Task Mode so the intent to
+                  // Settings can actually launch (pinned apps can't
+                  // start activities in other packages), then fire it.
+                  // Main.dart already disabled kiosk lockdown at boot
+                  // because !AppConfig.isConfigured — this call is
+                  // belt-and-braces in case the admin re-entered the
+                  // wizard via Edit Configuration from inside an
+                  // already-pinned admin panel.
+                  await KioskLockdown.setKioskModeAllowed(false);
+                  await KioskLockdown.openWifiSettings();
                 },
               ),
             ],
