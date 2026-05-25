@@ -146,6 +146,10 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           _buildAutoUpdateToggle(),
           const SizedBox(height: 12),
 
+          // ── Toggle: Auto-upload logs ───────────────────────────────────
+          _buildAutoUploadLogsToggle(),
+          const SizedBox(height: 12),
+
           // ── Test USB connection ────────────────────────────────────────
           _buildAction(
             icon: Icons.usb_rounded,
@@ -472,6 +476,64 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             activeTrackColor: const Color(0xFF388E3C).withValues(alpha: 0.4),
             onChanged: (val) async {
               await AppConfig.setAutoUpdate(val);
+              setState(() {});
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Auto-upload-logs toggle ───────────────────────────────────────────────
+
+  Widget _buildAutoUploadLogsToggle() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1A2B),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFF42A5F5).withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFF42A5F5).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.cloud_upload_outlined,
+                color: Color(0xFF42A5F5), size: 22),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Auto-upload logs',
+                    style: TextStyle(
+                        color: Color(0xFF42A5F5),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15)),
+                const SizedBox(height: 3),
+                Text(
+                  AppConfig.autoUploadLogs
+                      ? 'ON — log files ship to vms-cloud every 6 h (no operator action)'
+                      : 'OFF — manual upload only via View Logs → "Send to vms-cloud"',
+                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: AppConfig.autoUploadLogs,
+            activeThumbColor: const Color(0xFF42A5F5),
+            activeTrackColor: const Color(0xFF42A5F5).withValues(alpha: 0.4),
+            onChanged: (val) async {
+              await AppConfig.setAutoUploadLogs(val);
               setState(() {});
             },
           ),
