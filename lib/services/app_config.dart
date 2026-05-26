@@ -49,6 +49,15 @@ class AppConfig {
   // port (ttyS1..ttyS10, or ttyUSB5 for USB-to-serial cables).
   static const _kTtyPath = 'cfg_tty_path';
 
+  // Machine hardware family — controls the second byte of the CMD 0x41
+  // delivery frame:
+  //   'coil'      → byte = qty (number of units to dispense, usually 1)
+  //   'elevator'  → byte = axis type (0xFB = side push, the default for
+  //                 lift-capable T1-02 / T11-PRO / S4 machines)
+  // Stored as a short string so we can add more types (e.g. 'elevator-spring'
+  // for 0xFF spring axes on a lift platform) without a migration.
+  static const _kMachineType = 'cfg_machine_type';
+
   static SharedPreferences? _prefs;
 
   // ── Production fallbacks (baked into the APK) ─────────────────────────────
@@ -206,6 +215,24 @@ class AppConfig {
 
   static Future<void> setTtyPath(String path) async =>
       _prefs?.setString(_kTtyPath, path.trim());
+
+  /// Machine hardware family. Drives the second byte of the CMD 0x41
+  /// delivery frame:
+  ///   'coil'     → quantity (the byte = number of units to dispense)
+  ///   'elevator' → axis type (the byte = 0xFB side-push, default for
+  ///                lift-capable T1-02 / T11-PRO / S4 machines)
+  ///
+  /// Default is 'coil' — that matches our dev / test hardware and the
+  /// original kiosk behavior. Admin → "Machine Type" tile switches it
+  /// for sites running elevator vending machines.
+  static String get machineType {
+    final stored = _prefs?.getString(_kMachineType);
+    if (stored != null && stored.isNotEmpty) return stored;
+    return dotenv.env['MACHINE_TYPE'] ?? 'coil';
+  }
+
+  static Future<void> setMachineType(String type) async =>
+      _prefs?.setString(_kMachineType, type.trim());
 
   /// Guarda el lottery draw token (botón de sorteo para clientes).
   static Future<void> setLotteryToken(String token) async =>

@@ -217,6 +217,18 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           ),
           const SizedBox(height: 12),
 
+          // ── Machine Type (coil vs elevator/lift) ───────────────────────
+          _buildAction(
+            icon: Icons.precision_manufacturing_rounded,
+            label: 'Machine Type',
+            subtitle: 'Currently: ${_machineTypeLabel(AppConfig.machineType)}. '
+                'Coil = traditional spring lane. Elevator = lift-platform machines '
+                '(T1-02 / T11-PRO / S4) — uses side-push axis 0xFB on every dispense.',
+            color: const Color(0xFF9575CD),
+            onTap: _pickMachineType,
+          ),
+          const SizedBox(height: 12),
+
           // ── Check for Updates (downloads + installs a new APK from vms-cloud)
           _buildAction(
             icon: Icons.system_update_rounded,
@@ -1002,6 +1014,144 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         content: Text('TTY port set to $picked'),
         backgroundColor: const Color(0xFFFF6F00),
         duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  // ── Pick Machine Type (coil vs elevator) ─────────────────────────────────
+
+  /// Human-readable label for the stored machine-type string.
+  String _machineTypeLabel(String key) => switch (key) {
+        'elevator'        => 'Elevator (side-push, 0xFB)',
+        'elevator-spring' => 'Elevator (spring axis, 0xFF)',
+        _                 => 'Coil / spring lane',
+      };
+
+  Future<void> _pickMachineType() async {
+    final current = AppConfig.machineType;
+    final options = <(String, String, String)>[
+      (
+        'coil',
+        'Coil / spring lane',
+        'Traditional spring-lane vending. Second byte of CMD 0x41 is the '
+            'quantity to dispense. Use this for non-lift machines.',
+      ),
+      (
+        'elevator',
+        'Elevator — side push (0xFB)',
+        'Lift-platform machines (T1-02 / T11-PRO / S4) with a side-push '
+            'axis. Default for elevator hardware.',
+      ),
+      (
+        'elevator-spring',
+        'Elevator — spring axis (0xFF)',
+        'Lift-platform machines whose individual slots still use a '
+            'spring (rare hybrid setup).',
+      ),
+    ];
+
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1A2B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(children: [
+          Icon(Icons.precision_manufacturing_rounded, color: Color(0xFF9575CD)),
+          SizedBox(width: 10),
+          Text('Machine Type',
+              style: TextStyle(color: Colors.white, fontSize: 17)),
+        ]),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Selects what the second byte of the CMD 0x41 delivery '
+                'frame means. Pick the option that matches the physical '
+                'vending machine the kiosk is mounted on.',
+                style: TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              const SizedBox(height: 14),
+              for (final opt in options) ...[
+                InkWell(
+                  onTap: () => Navigator.pop(context, opt.$1),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: opt.$1 == current
+                            ? const Color(0xFF9575CD)
+                            : Colors.white12,
+                        width: opt.$1 == current ? 1.5 : 1,
+                      ),
+                      color: opt.$1 == current
+                          ? const Color(0xFF9575CD).withValues(alpha: 0.08)
+                          : Colors.transparent,
+                    ),
+                    child: Row(children: [
+                      Icon(
+                        opt.$1 == current
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
+                        color: opt.$1 == current
+                            ? const Color(0xFF9575CD)
+                            : Colors.white38,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(opt.$2,
+                                style: TextStyle(
+                                  color: opt.$1 == current
+                                      ? const Color(0xFF9575CD)
+                                      : Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                )),
+                            const SizedBox(height: 3),
+                            Text(opt.$3,
+                                style: const TextStyle(
+                                    color: Colors.white54, fontSize: 11)),
+                          ],
+                        ),
+                      ),
+                    ]),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('Cancel',
+                style: TextStyle(color: Colors.white38)),
+          ),
+        ],
+      ),
+    );
+
+    if (picked == null || picked == current) return;
+
+    await AppConfig.setMachineType(picked);
+    if (!mounted) return;
+    setState(() {});
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Machine type set to ${_machineTypeLabel(picked)}'),
+        backgroundColor: const Color(0xFF9575CD),
+        duration: const Duration(seconds: 3),
       ),
     );
   }
