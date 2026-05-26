@@ -33,6 +33,16 @@ const int _kCmdDelivery    = 0x41; // Despachar producto
 const int _kCmdQueryStatus = 0xE1; // Consultar estado
 const int _kCmdClearFault  = 0xA2; // Limpiar fallo
 
+// ── Axis types (elevator / lift machines only) ──────────────────────────────
+// On lift-capable hardware (T1-02 / T11-PRO / S4) the second byte of CMD 0x41
+// is *not* a quantity — it's the axis type the VMC should engage after the
+// lift platform reaches the slot's floor:
+//   0xFF (-1 signed) = spring   — same coil-style turn as on non-lift machines
+//   0xFB (-5 signed) = side push — the elevator-platform pusher rod
+// Coil-only machines treat the same byte as `qty` (number of units to drop).
+const int _kAxisSpring   = 0xFF;
+const int _kAxisSidePush = 0xFB;
+
 /// Estados del flujo de despacho.
 enum DispenseStatus { sending, waitingConfirm, success, error }
 
@@ -100,10 +110,32 @@ class VendingMachineService {
 
   // ── Tramas específicas ────────────────────────────────────────────────────
 
-  /// CMD 0x41 — Despachar slot [slot], cantidad [qty] (default 1).
-  /// Frame: FF | 00 | 55 | 41 | 02 | slot | qty | CHK
-  static Uint8List buildDeliveryFrame(int slot, {int qty = 1}) =>
-      _buildFrame(_kCmdDelivery, [slot & 0xFF, qty & 0xFF]);
+  /// CMD 0x41 — Dispense [slot].
+  ///
+  /// Frame: FF | 00 | 55 | 41 | 02 | slot | <second byte> | CHK
+  ///
+  /// The meaning of the second byte depends on the machine family
+  /// configured in [AppConfig.machineType]:
+  ///   - 'coil'     → byte = [qty] (number of units to drop, usually 1)
+  ///   - 'elevator' → byte = axis type the VMC should engage after the
+  ///                  lift platform reaches the slot's floor. Defaults
+  ///                  to side-push (0xFB), which is what every T1-02 /
+  ///                  T11-PRO / S4 vending machine we've shipped to a
+  ///                  client uses.
+  ///
+  /// Hardcoding `0x01` (the old behavior) worked on coil machines
+  /// because that's a valid qty. On elevator machines the VMC reads
+  /// it as "use spring axis index 1" — which doesn't map to any
+  /// physical axis, so the push never fires. The dispense looks like
+  /// it succeeded (echo comes back) but nothing actually drops.
+  static Uint8List buildDeliveryFrame(int slot, {int qty = 1}) {
+    final int secondByte = switch (AppConfig.machineType) {
+      'elevator'        => _kAxisSidePush,
+      'elevator-spring' => _kAxisSpring,
+      _                 => qty & 0xFF,
+    };
+    return _buildFrame(_kCmdDelivery, [slot & 0xFF, secondByte]);
+  }
 
   /// CMD 0xE1 — Consultar estado de la máquina.
   static Uint8List buildQueryStatusFrame(int slot, {int qty = 1}) =>
