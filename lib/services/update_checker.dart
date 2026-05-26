@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 
 import 'app_config.dart';
@@ -32,16 +34,47 @@ class UpdateChecker {
 
   /// Trigger one immediate check, then keep polling every [interval].
   /// Safe to call multiple times — only the first call wires up the loop.
+  ///
+  /// Default interval is intentionally short (30 s base + up to 10 s of
+  /// jitter) so a newly-uploaded APK lands on every kiosk within ~30 s
+  /// of upload, not within an hour. Justified at our fleet size: each
+  /// poll is a single ~200-byte GET, so 50 kiosks at 30 s = ~1.7 RPS
+  /// against vms-cloud — negligible. The jitter prevents a synchronized
+  /// thundering-herd download when an APK does land.
   void startBackgroundChecks({
-    Duration interval = const Duration(hours: 1),
+    Duration interval = const Duration(seconds: 30),
   }) {
     if (_started) return;
     _started = true;
-    // Fire a check now (after a short delay so we don't compete with
-    // the app's initial network calls).
-    Future<void>.delayed(const Duration(seconds: 8), _runOnce);
-    // Then every [interval].
-    Stream<void>.periodic(interval).listen((_) => _runOnce());
+
+    final rng = math.Random();
+    Duration nextDelay() => interval +
+        Duration(milliseconds: rng.nextInt(10000)); // up to +10 s jitter
+
+    // First check 8 s after launch so we don't compete with the app's
+    // initial network calls.
+    Future<void>.delayed(const Duration(seconds: 8), () async {
+      await _runOnce();
+      _scheduleNext(nextDelay, () async => _runOnce());
+    });
+
+    LogFileUtil.i('update.checker.scheduler_started', {
+      'base_interval_sec': interval.inSeconds.toString(),
+      'jitter_max_ms': '10000',
+    });
+  }
+
+  /// Self-rescheduling loop. We don't use `Timer.periodic` so we can
+  /// re-jitter every iteration — `periodic` would lock in a single
+  /// random offset on the first tick and re-use it forever.
+  void _scheduleNext(
+    Duration Function() nextDelay,
+    Future<void> Function() body,
+  ) {
+    Future<void>.delayed(nextDelay(), () async {
+      await body();
+      if (_started) _scheduleNext(nextDelay, body);
+    });
   }
 
   /// One-shot check — caller can `await` this and read [notifier.value].
