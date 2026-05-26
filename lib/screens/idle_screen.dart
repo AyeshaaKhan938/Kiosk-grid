@@ -29,6 +29,7 @@ class _IdleScreenState extends State<IdleScreen>
   List<Advertisement> _backendAds = [];
   int   _adIndex = 0;
   Timer? _adTimer;
+  Timer? _adRefreshTimer;
   late PageController _pageCtrl;
 
   // ── Secret admin gesture (5 taps in the top-left corner within 2s) ────────
@@ -107,6 +108,16 @@ class _IdleScreenState extends State<IdleScreen>
     )..repeat();
 
     _loadAds();
+    // Re-poll the ads endpoint every 2 minutes with the in-memory cache
+    // bypassed, so an ad updated in vms-cloud admin shows up on the
+    // kiosk automatically within ~2 minutes — no reboot or admin tap.
+    // The disk-level CachedNetworkImage still applies per image URL, so
+    // operators should give new ads a unique filename if they replace
+    // an existing one in-place.
+    _adRefreshTimer = Timer.periodic(
+      const Duration(minutes: 2),
+      (_) => _loadAds(forceRefresh: true),
+    );
     _startDemoTimer();
     _slideTextCtrl.forward();
   }
@@ -114,6 +125,7 @@ class _IdleScreenState extends State<IdleScreen>
   @override
   void dispose() {
     _adTimer?.cancel();
+    _adRefreshTimer?.cancel();
     _pageCtrl.dispose();
     _pulseCtrl.dispose();
     _slideTextCtrl.dispose();
@@ -121,9 +133,10 @@ class _IdleScreenState extends State<IdleScreen>
     super.dispose();
   }
 
-  Future<void> _loadAds() async {
+  Future<void> _loadAds({bool forceRefresh = false}) async {
     try {
-      final ads = await AdvertisementService.fetchAds();
+      final ads =
+          await AdvertisementService.fetchAds(null, forceRefresh);
       if (mounted) {
         // Combine the two on-screen slots, but dedupe by ID so an ad
         // configured into BOTH screensaver and top doesn't appear twice

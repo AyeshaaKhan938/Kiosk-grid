@@ -32,9 +32,16 @@ class AdvertisementService {
   /// - Usa caché durante [_cacheTtl] para no golpear la API en cada arranque.
   /// - Devuelve [AdvertisementsResponse.empty] si no hay conexión o la máquina
   ///   no tiene grupo de anuncios asignado.
-  static Future<AdvertisementsResponse> fetchAds([String? machineNo]) async {
-    // Devolver caché si sigue vigente
-    if (_cache != null &&
+  ///
+  /// Pass [forceRefresh] = true to bypass the in-memory cache. The idle
+  /// screen's periodic re-poll uses this so an ad updated in vms-cloud
+  /// admin shows up on the kiosk within ~2 minutes — without having to
+  /// wait the full [_cacheTtl] window or reboot the tablet.
+  static Future<AdvertisementsResponse> fetchAds(
+      [String? machineNo, bool forceRefresh = false]) async {
+    // Devolver caché si sigue vigente (a menos que el caller pida un refresh).
+    if (!forceRefresh &&
+        _cache != null &&
         _cacheTime != null &&
         DateTime.now().difference(_cacheTime!) < _cacheTtl) {
       debugPrint('[ads] returning cached response '
@@ -42,6 +49,7 @@ class AdvertisementService {
           '${_cache!.top.length} top)');
       return _cache!;
     }
+    if (forceRefresh) debugPrint('[ads] forceRefresh=true, bypassing cache');
 
     final no  = machineNo ?? _machineNo;
     final url = Uri.parse('$_baseUrl/machines/$no/advertisements');
