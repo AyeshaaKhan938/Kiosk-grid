@@ -29,9 +29,10 @@ const int _kHeaderApp = 0x55; // App → VMC
 // patched and we re-enable response parsing.
 
 // ── Comandos ──────────────────────────────────────────────────────────────────
-const int _kCmdDelivery    = 0x41; // Despachar producto
-const int _kCmdQueryStatus = 0xE1; // Consultar estado
-const int _kCmdClearFault  = 0xA2; // Limpiar fallo
+const int _kCmdDelivery        = 0x41; // Despachar producto
+const int _kCmdQueryStatus     = 0xE1; // Consultar estado
+const int _kCmdClearFault      = 0xA2; // Limpiar fallo
+const int _kCmdSetFloorHeight  = 0x21; // Set lift floor height (elevator only)
 
 // ── Axis types (elevator / lift machines only) ──────────────────────────────
 // On lift-capable hardware (T1-02 / T11-PRO / S4) the second byte of CMD 0x41
@@ -144,6 +145,23 @@ class VendingMachineService {
   /// CMD 0xA2 — Limpiar fallo.
   static Uint8List buildClearFaultFrame() =>
       _buildFrame(_kCmdClearFault, [0xFF]);
+
+  /// CMD 0x21 — Enable lift-platform auto-height-detection.
+  ///
+  /// Frame: FF | 00 | 55 | 21 | 03 | FF | 00 | 00 | CHK
+  ///
+  /// Floor=0xFF is the protocol's "auto-detect" sentinel. The VMC
+  /// physically runs the lift up and down, learns each floor's height,
+  /// and persists the map internally. Without this calibration, the
+  /// elevator can't move the platform to a slot's floor — every dispense
+  /// returns motor-fault status (data byte 0x02 on a 0xE1 query).
+  ///
+  /// Mirrors factory.apk's `onSetHeightSend()`. Confirmed via UART
+  /// capture from the client's machine that this is the missing step:
+  /// CMD 0x41 with 0xFB side-push echoes back fine but the lift never
+  /// moves because the floor map was never built.
+  static Uint8List buildCalibrateLiftFrame() =>
+      _buildFrame(_kCmdSetFloorHeight, [0xFF, 0x00, 0x00]);
 
   // ── Flujo principal ───────────────────────────────────────────────────────
   //
@@ -356,6 +374,68 @@ class VendingMachineService {
       await TtySerial.write(buildClearFaultFrame());
       // Drain any echo so it doesn't pollute the next dispense's read.
       await TtySerial.read(timeout: const Duration(milliseconds: 400));
+      return const DispenseResult(status: DispenseStatus.success);
+    } catch (e) {
+      return DispenseResult(
+        status: DispenseStatus.error,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
+  /// Run lift-platform auto-calibration through the same single-flight
+  /// gate the dispense flow uses. Sends CMD 0x21 with Floor=0xFF, then
+  /// holds the gate for ~45 s while the physical lift runs up and down
+  /// through every floor learning heights. The VMC persists the result
+  /// internally — this only needs to be run once per machine after
+  /// switching Machine Type to Elevator.
+  static Future<DispenseResult> calibrateLiftViaGate() async {
+    if (kIsWeb) {
+      return const DispenseResult(
+        status: DispenseStatus.error,
+        errorMessage: 'Lift calibration only works on the tablet.',
+      );
+    }
+    return _withDispenseGate(_calibrateLiftImpl);
+  }
+
+  static Future<DispenseResult> _calibrateLiftImpl() async {
+    try {
+      final opened = await TtySerial.open(AppConfig.ttyPath, baud: 9600);
+      if (!opened) {
+        return const DispenseResult(
+          status: DispenseStatus.error,
+          errorMessage: 'TtySerial.open returned false',
+        );
+      }
+
+      final frame = buildCalibrateLiftFrame();
+      LogFileUtil.i('lift.calibrate.send', {
+        'frame': frame
+            .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
+            .join(' '),
+      });
+      await TtySerial.write(frame);
+
+      // Drain the immediate echo (FF 00 AA 21 ... in factory traces).
+      try {
+        final echo = await TtySerial.read(
+          timeout: const Duration(milliseconds: 800),
+        );
+        LogFileUtil.i('lift.calibrate.echo',
+            {'bytes': echo.length.toString()});
+      } catch (_) {
+        // Best-effort — calibration runs regardless of whether we
+        // read the echo cleanly.
+      }
+
+      // Hold the gate while the lift physically runs through all
+      // floors. Factory captures show ~30 s for a fully-loaded 6-floor
+      // elevator; we pad to 45 s so a slower / longer machine still
+      // finishes inside the window.
+      await Future<void>.delayed(const Duration(seconds: 45));
+      LogFileUtil.i('lift.calibrate.complete');
+
       return const DispenseResult(status: DispenseStatus.success);
     } catch (e) {
       return DispenseResult(

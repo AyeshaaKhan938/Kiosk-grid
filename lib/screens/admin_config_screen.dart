@@ -182,6 +182,20 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           ),
           const SizedBox(height: 12),
 
+          // ── Calibrate Lift Platform (elevator machines only) ───────────
+          _buildAction(
+            icon: Icons.vertical_align_top_rounded,
+            label: 'Calibrate Lift Platform',
+            subtitle: 'Elevator machines only. Sends CMD 0x21 to teach '
+                'the VMC each floor\'s height — the lift will physically '
+                'run through every floor (~45 s). Run this once after '
+                'switching Machine Type to Elevator; the VMC persists '
+                'the result.',
+            color: const Color(0xFF8E24AA),
+            onTap: _calibrateLift,
+          ),
+          const SizedBox(height: 12),
+
           // ── View Logs (field debugging) ────────────────────────────────
           _buildAction(
             icon: Icons.article_outlined,
@@ -720,6 +734,79 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => _DispenseProgressDialog(slotNumber: slotNumber),
+    );
+  }
+
+  // ── Calibrate Lift Platform (CMD 0x21 — elevator only) ──────────────────
+
+  Future<void> _calibrateLift() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1A2B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(children: [
+          Icon(Icons.vertical_align_top_rounded, color: Color(0xFF8E24AA)),
+          SizedBox(width: 10),
+          Expanded(child: Text('Calibrate Lift Platform',
+              style: TextStyle(color: Colors.white, fontSize: 17))),
+        ]),
+        content: FutureBuilder<DispenseResult>(
+          future: VendingMachineService.calibrateLiftViaGate(),
+          builder: (_, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const SizedBox(
+                width: 320,
+                child: Row(children: [
+                  SizedBox(width: 22, height: 22,
+                      child: CircularProgressIndicator(
+                          color: Color(0xFF8E24AA), strokeWidth: 2.5)),
+                  SizedBox(width: 14),
+                  Expanded(child: Text(
+                    'Sending CMD 0x21 to the VMC… the lift platform '
+                    'will run through every floor while it learns the '
+                    'heights. Don\'t open the cabinet door. About 45 s.',
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  )),
+                ]),
+              );
+            }
+            final result = snap.data;
+            final ok = result?.status == DispenseStatus.success;
+            return SizedBox(
+              width: 320,
+              child: Row(children: [
+                Icon(
+                  ok ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                  color: ok ? Colors.greenAccent : Colors.redAccent,
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Text(
+                  ok
+                      ? 'Calibration sent. Wait for the lift to finish its '
+                          'travel (if it hasn\'t already) then run Test '
+                          'Dispense Slot — the VMC now knows each floor\'s '
+                          'height and only needs this calibration once per '
+                          'machine.'
+                      : 'Failed: ${result?.errorMessage ?? "Unknown error"}',
+                  style: TextStyle(
+                    color: ok ? Colors.greenAccent : Colors.redAccent,
+                    fontSize: 13,
+                  ),
+                )),
+              ]),
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close',
+                style: TextStyle(color: Color(0xFF007ACC))),
+          ),
+        ],
+      ),
     );
   }
 
