@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'app_config.dart';
 
@@ -29,6 +30,8 @@ class ApiService {
   static String get _baseUrl      => AppConfig.apiBaseUrl;
   static String get _lotteryToken => AppConfig.lotteryToken;
   static String get _machineNo    => AppConfig.machineNo;
+
+  static final math.Random _rng = math.Random.secure();
 
   // ── Draw (flujo original: token configurado en la app) ─────────────────────
 
@@ -91,41 +94,22 @@ class ApiService {
       final body  = jsonDecode(response.body) as Map<String, dynamic>;
       final tiers = (body['tiers'] as Map).cast<String, dynamic>();
 
-      // Sequential dispense — drain slots in line_number ASC across all
-      // tiers, no randomness post-redemption. Flatten every in-stock slot
-      // from every tier into a single list keyed by its tier (so the
-      // customer-facing prize label still picks up the correct tier name),
-      // sort by line_number, then take the first.
-      //
-      // Tier weights in lottery_settings still affect *prize labelling* —
-      // the customer sees "Grand Prize" or "Consolation" based on which
-      // tier the picked slot is tagged with — but no longer affect *which
-      // slot* fires. Tier A slots drain first because they're numbered
-      // 1, 2, 3; Tier B slots (4–36) drain after.
-      final flat = <MapEntry<String, Map<String, dynamic>>>[];
-      for (final e in tiers.entries) {
-        final tierMap   = (e.value as Map).cast<String, dynamic>();
-        final slotsList = (tierMap['slots'] as List?) ?? const [];
-        for (final s in slotsList) {
-          flat.add(MapEntry(e.key, (s as Map).cast<String, dynamic>()));
-        }
-      }
+      // Roll the tier (weighted) — only consider tiers with at least one
+      // in-stock slot. The backend already filters by stock>0 but we double-
+      // check here in case both tiers are empty (the backend rejects that case
+      // with a 503 NO_STOCK before locking the code, so we shouldn't see it).
+      final chosen = _rollTier(tiers);
+      final tierConfig = (tiers[chosen] as Map).cast<String, dynamic>();
+      final slots = (tierConfig['slots'] as List).cast<Map>();
 
-      if (flat.isEmpty) {
+      if (slots.isEmpty) {
         throw const LotteryCodeException(
           'Sorry, this prize is currently out of stock.',
         );
       }
 
-      flat.sort((a, b) {
-        final la = _parseInt(a.value['line_number']) ?? 999;
-        final lb = _parseInt(b.value['line_number']) ?? 999;
-        return la.compareTo(lb);
-      });
-
-      final chosen     = flat.first.key;
-      final pick       = flat.first.value;
-      final tierConfig = (tiers[chosen] as Map).cast<String, dynamic>();
+      // Random slot within the chosen tier (uniform).
+      final pick = slots[_rng.nextInt(slots.length)].cast<String, dynamic>();
 
       return LotteryCodeResult(
         code:        normalized,
@@ -189,6 +173,39 @@ class ApiService {
       // Best-effort — don't block UX if the confirm call fails. The redemption
       // is already locked server-side; missing dispense metadata is recoverable.
     }
+  }
+
+  // ── Weighted dice ──────────────────────────────────────────────────────────
+
+  /// Picks a tier key from the config map using its `weight` field.
+  /// Tiers with weight==0 or no in-stock slots are excluded — if a customer
+  /// would have won Tier A but Tier A is empty, they get Tier B instead.
+  static String _rollTier(Map<String, dynamic> tiers) {
+    int total = 0;
+    final entries = <MapEntry<String, int>>[];
+    for (final e in tiers.entries) {
+      final tierMap = (e.value as Map).cast<String, dynamic>();
+      final w = _parseInt(tierMap['weight']) ?? 0;
+      final hasSlots = (tierMap['slots'] is List) && (tierMap['slots'] as List).isNotEmpty;
+      if (w > 0 && hasSlots) {
+        total += w;
+        entries.add(MapEntry(e.key, w));
+      }
+    }
+    if (total == 0 || entries.isEmpty) {
+      // Both tiers empty — the backend already rejected this case with 503
+      // before locking the code. Fall back to the first available key just in
+      // case (the caller will then fail on empty slots).
+      return tiers.keys.first;
+    }
+
+    final roll = _rng.nextInt(total);
+    int acc = 0;
+    for (final e in entries) {
+      acc += e.value;
+      if (roll < acc) return e.key;
+    }
+    return entries.last.key;
   }
 
   static int? _parseInt(Object? v) {
