@@ -10,6 +10,8 @@ import '../services/update_service.dart';
 import '../services/vending_machine_service.dart';
 import '../widgets/onscreen_keypad.dart';
 import 'setup_wizard_screen.dart';
+import 'admin/vmc_floor_height_screen.dart';
+import 'admin/vmc_log_screen.dart';
 import 'admin/admin_logs_screen.dart';
 import 'admin/admin_shell_screen.dart';
 
@@ -164,7 +166,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           _buildAction(
             icon: Icons.local_shipping_rounded,
             label: 'Test Dispense Slot',
-            subtitle: 'Fire a motor to verify hardware. No order created, no Ten Point Media validation.',
+            subtitle:
+                'Fire a motor to verify hardware. No order created, no Ten Point Media validation.',
             color: const Color(0xFF4CAF50),
             onTap: _promptTestDispense,
           ),
@@ -189,10 +192,35 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             subtitle: 'Elevator machines only. Sends CMD 0x21 to teach '
                 'the VMC each floor\'s height — the lift will physically '
                 'run through every floor (~45 s). Run this once after '
-                'switching Machine Type to Elevator; the VMC persists '
-                'the result.',
+                'installing or servicing the lift; the VMC persists the result.',
             color: const Color(0xFF8E24AA),
             onTap: _calibrateLift,
+          ),
+          const SizedBox(height: 12),
+
+          _buildAction(
+            icon: Icons.height_rounded,
+            label: 'Lift Floor Heights',
+            subtitle: 'Read CMD 0x20 floor heights and set individual '
+                'floor values with CMD 0x21 using ${AppConfig.ttyPath}.',
+            color: const Color(0xFF8E24AA),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const VmcFloorHeightScreen()),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          _buildAction(
+            icon: Icons.receipt_long_rounded,
+            label: 'VMC Log',
+            subtitle: 'Request board logs with CMD 0x03, then read the '
+                '115200-baud log stream from ${AppConfig.ttyPath}.',
+            color: const Color(0xFF00BCD4),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const VmcLogScreen()),
+            ),
           ),
           const SizedBox(height: 12),
 
@@ -215,7 +243,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           _buildAction(
             icon: Icons.device_hub_rounded,
             label: 'List USB Devices',
-            subtitle: 'Show every USB device attached, with vendor/product IDs. Use this when "not a serial device" errors appear.',
+            subtitle:
+                'Show every USB device attached, with vendor/product IDs. Use this when "not a serial device" errors appear.',
             color: const Color(0xFF9C27B0),
             onTap: _listUsbDevices,
           ),
@@ -225,21 +254,21 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           _buildAction(
             icon: Icons.cable_rounded,
             label: 'TTY Serial Port',
-            subtitle: 'Currently: ${AppConfig.ttyPath}. Tap to list available /dev/ttyS* devices and pick the one connected to the Reyeah board.',
+            subtitle:
+                'Currently: ${AppConfig.ttyPath}. Tap to list available /dev/ttyS* devices and pick the one connected to the Reyeah board.',
             color: const Color(0xFFFF6F00),
             onTap: _pickTtyDevice,
           ),
           const SizedBox(height: 12),
 
-          // ── Machine Type (coil vs elevator/lift) ───────────────────────
+          // ── Delivery axis note ─────────────────────────────────────────
           _buildAction(
             icon: Icons.precision_manufacturing_rounded,
-            label: 'Machine Type',
-            subtitle: 'Currently: ${_machineTypeLabel(AppConfig.machineType)}. '
-                'Coil = traditional spring lane. Elevator = lift-platform machines '
-                '(T1-02 / T11-PRO / S4) — uses side-push axis 0xFB on every dispense.',
+            label: 'Delivery Axis',
+            subtitle: 'Fixed: side-push 0xFB. Every dispense sends '
+                'FF 00 55 41 02 <slot> FB <checksum>.',
             color: const Color(0xFF9575CD),
-            onTap: _pickMachineType,
+            onTap: _showDeliveryAxisInfo,
           ),
           const SizedBox(height: 12),
 
@@ -247,7 +276,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           _buildAction(
             icon: Icons.system_update_rounded,
             label: 'Check for Updates',
-            subtitle: 'Download and install the latest APK from vms-cloud. Settings + PIN are preserved.',
+            subtitle:
+                'Download and install the latest APK from vms-cloud. Settings + PIN are preserved.',
             color: const Color(0xFF388E3C),
             onTap: _checkForUpdates,
           ),
@@ -257,7 +287,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           _buildAction(
             icon: Icons.lock_open_rounded,
             label: 'Exit Kiosk Mode',
-            subtitle: 'Unlock the tablet so you can update the app or access Settings. Re-locks on next app launch.',
+            subtitle:
+                'Unlock the tablet so you can update the app or access Settings. Re-locks on next app launch.',
             color: const Color(0xFFFFB300),
             onTap: _confirmExitKioskMode,
           ),
@@ -266,7 +297,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           _buildAction(
             icon: Icons.restart_alt_rounded,
             label: 'Reset to Factory Defaults',
-            subtitle: 'Clears all saved settings. App will show Setup on next launch.',
+            subtitle:
+                'Clears all saved settings. App will show Setup on next launch.',
             color: Colors.redAccent,
             onTap: _confirmReset,
           ),
@@ -304,24 +336,25 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFF0D1A2B),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF007ACC).withValues(alpha: 0.2)),
+        border:
+            Border.all(color: const Color(0xFF007ACC).withValues(alpha: 0.2)),
       ),
       child: Column(
         children: [
           _buildModeOption(
-            value:    'vmscloud',
-            label:    'vms-cloud (Laravel)',
+            value: 'vmscloud',
+            label: 'vms-cloud (Laravel)',
             subtitle: 'VMFS own backend — lottery, products & dispatch',
-            icon:     Icons.dns_outlined,
-            color:    const Color(0xFF007ACC),
+            icon: Icons.dns_outlined,
+            color: const Color(0xFF007ACC),
           ),
           Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
           _buildModeOption(
-            value:    'reyeah',
-            label:    'Reyeah Cloud',
+            value: 'reyeah',
+            label: 'Reyeah Cloud',
             subtitle: 'Direct Reyeah Cloud API — product catalog & orders',
-            icon:     Icons.cloud_outlined,
-            color:    const Color(0xFF00BCD4),
+            icon: Icons.cloud_outlined,
+            color: const Color(0xFF00BCD4),
           ),
         ],
       ),
@@ -353,7 +386,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                 color: color.withValues(alpha: selected ? 0.18 : 0.07),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(icon, color: selected ? color : Colors.white38, size: 20),
+              child: Icon(icon,
+                  color: selected ? color : Colors.white38, size: 20),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -368,7 +402,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                       )),
                   const SizedBox(height: 2),
                   Text(subtitle,
-                      style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                      style:
+                          const TextStyle(color: Colors.white38, fontSize: 11)),
                 ],
               ),
             ),
@@ -620,8 +655,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close',
-                style: TextStyle(color: Color(0xFF007ACC))),
+            child:
+                const Text('Close', style: TextStyle(color: Color(0xFF007ACC))),
           ),
         ],
       ),
@@ -678,8 +713,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
-                      color: Color(0xFF4CAF50), width: 1.5),
+                  borderSide:
+                      const BorderSide(color: Color(0xFF4CAF50), width: 1.5),
                 ),
               ),
               onTap: () => showKeypad(
@@ -696,8 +731,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, null),
-            child: const Text('Cancel',
-                style: TextStyle(color: Colors.white38)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white38)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -749,8 +784,9 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         title: const Row(children: [
           Icon(Icons.vertical_align_top_rounded, color: Color(0xFF8E24AA)),
           SizedBox(width: 10),
-          Expanded(child: Text('Calibrate Lift Platform',
-              style: TextStyle(color: Colors.white, fontSize: 17))),
+          Expanded(
+              child: Text('Calibrate Lift Platform',
+                  style: TextStyle(color: Colors.white, fontSize: 17))),
         ]),
         content: FutureBuilder<DispenseResult>(
           future: VendingMachineService.calibrateLiftViaGate(),
@@ -759,11 +795,14 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
               return const SizedBox(
                 width: 320,
                 child: Row(children: [
-                  SizedBox(width: 22, height: 22,
+                  SizedBox(
+                      width: 22,
+                      height: 22,
                       child: CircularProgressIndicator(
                           color: Color(0xFF8E24AA), strokeWidth: 2.5)),
                   SizedBox(width: 14),
-                  Expanded(child: Text(
+                  Expanded(
+                      child: Text(
                     'Sending CMD 0x21 to the VMC… the lift platform '
                     'will run through every floor while it learns the '
                     'heights. Don\'t open the cabinet door. About 45 s.',
@@ -782,7 +821,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                   color: ok ? Colors.greenAccent : Colors.redAccent,
                 ),
                 const SizedBox(width: 12),
-                Expanded(child: Text(
+                Expanded(
+                    child: Text(
                   ok
                       ? 'Calibration sent. Wait for the lift to finish its '
                           'travel (if it hasn\'t already) then run Test '
@@ -802,8 +842,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close',
-                style: TextStyle(color: Color(0xFF007ACC))),
+            child:
+                const Text('Close', style: TextStyle(color: Color(0xFF007ACC))),
           ),
         ],
       ),
@@ -830,11 +870,14 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           builder: (_, snap) {
             if (snap.connectionState == ConnectionState.waiting) {
               return const Row(children: [
-                SizedBox(width: 22, height: 22,
+                SizedBox(
+                    width: 22,
+                    height: 22,
                     child: CircularProgressIndicator(
                         color: Color(0xFFFF7043), strokeWidth: 2.5)),
                 SizedBox(width: 14),
-                Expanded(child: Text(
+                Expanded(
+                    child: Text(
                   'Sending 0xA2 clear-fault command…',
                   style: TextStyle(color: Colors.white70, fontSize: 13),
                 )),
@@ -848,7 +891,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                 color: ok ? Colors.greenAccent : Colors.redAccent,
               ),
               const SizedBox(width: 12),
-              Expanded(child: Text(
+              Expanded(
+                  child: Text(
                 ok
                     ? 'Sent. Faults should now be cleared on the board. '
                         'Run a Test Dispense to confirm.'
@@ -864,8 +908,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close',
-                style: TextStyle(color: Color(0xFF007ACC))),
+            child:
+                const Text('Close', style: TextStyle(color: Color(0xFF007ACC))),
           ),
         ],
       ),
@@ -899,8 +943,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                   CircularProgressIndicator(
                       color: Color(0xFF9C27B0), strokeWidth: 2),
                   SizedBox(width: 16),
-                  Text('Scanning…',
-                      style: TextStyle(color: Colors.white54)),
+                  Text('Scanning…', style: TextStyle(color: Colors.white54)),
                 ]),
               );
             }
@@ -909,8 +952,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
               return SizedBox(
                 width: 320,
                 child: Text('Error: ${snap.error}',
-                    style: const TextStyle(
-                        color: Colors.redAccent, fontSize: 12)),
+                    style:
+                        const TextStyle(color: Colors.redAccent, fontSize: 12)),
               );
             }
 
@@ -976,8 +1019,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close',
-                style: TextStyle(color: Color(0xFF007ACC))),
+            child:
+                const Text('Close', style: TextStyle(color: Color(0xFF007ACC))),
           ),
         ],
       ),
@@ -996,7 +1039,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         context: context,
         builder: (_) => AlertDialog(
           backgroundColor: const Color(0xFF0D1A2B),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Row(
             children: [
               Icon(Icons.cable_rounded, color: Color(0xFFFF6F00)),
@@ -1070,9 +1114,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                           : Colors.white,
                       fontSize: 13,
                       fontFamily: 'monospace',
-                      fontWeight: path == current
-                          ? FontWeight.bold
-                          : FontWeight.normal,
+                      fontWeight:
+                          path == current ? FontWeight.bold : FontWeight.normal,
                     ),
                   ),
                   onTap: () => Navigator.pop(context, path),
@@ -1083,8 +1126,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, null),
-            child: const Text('Cancel',
-                style: TextStyle(color: Colors.white38)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white38)),
           ),
         ],
       ),
@@ -1105,39 +1148,10 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     );
   }
 
-  // ── Pick Machine Type (coil vs elevator) ─────────────────────────────────
+  // ── Delivery axis info ───────────────────────────────────────────────────
 
-  /// Human-readable label for the stored machine-type string.
-  String _machineTypeLabel(String key) => switch (key) {
-        'elevator'        => 'Elevator (side-push, 0xFB)',
-        'elevator-spring' => 'Elevator (spring axis, 0xFF)',
-        _                 => 'Coil / spring lane',
-      };
-
-  Future<void> _pickMachineType() async {
-    final current = AppConfig.machineType;
-    final options = <(String, String, String)>[
-      (
-        'coil',
-        'Coil / spring lane',
-        'Traditional spring-lane vending. Second byte of CMD 0x41 is the '
-            'quantity to dispense. Use this for non-lift machines.',
-      ),
-      (
-        'elevator',
-        'Elevator — side push (0xFB)',
-        'Lift-platform machines (T1-02 / T11-PRO / S4) with a side-push '
-            'axis. Default for elevator hardware.',
-      ),
-      (
-        'elevator-spring',
-        'Elevator — spring axis (0xFF)',
-        'Lift-platform machines whose individual slots still use a '
-            'spring (rare hybrid setup).',
-      ),
-    ];
-
-    final picked = await showDialog<String>(
+  Future<void> _showDeliveryAxisInfo() async {
+    await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF0D1A2B),
@@ -1145,100 +1159,24 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         title: const Row(children: [
           Icon(Icons.precision_manufacturing_rounded, color: Color(0xFF9575CD)),
           SizedBox(width: 10),
-          Text('Machine Type',
+          Text('Delivery Axis',
               style: TextStyle(color: Colors.white, fontSize: 17)),
         ]),
-        content: SizedBox(
+        content: const SizedBox(
           width: 360,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Selects what the second byte of the CMD 0x41 delivery '
-                'frame means. Pick the option that matches the physical '
-                'vending machine the kiosk is mounted on.',
-                style: TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-              const SizedBox(height: 14),
-              for (final opt in options) ...[
-                InkWell(
-                  onTap: () => Navigator.pop(context, opt.$1),
-                  borderRadius: BorderRadius.circular(10),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: opt.$1 == current
-                            ? const Color(0xFF9575CD)
-                            : Colors.white12,
-                        width: opt.$1 == current ? 1.5 : 1,
-                      ),
-                      color: opt.$1 == current
-                          ? const Color(0xFF9575CD).withValues(alpha: 0.08)
-                          : Colors.transparent,
-                    ),
-                    child: Row(children: [
-                      Icon(
-                        opt.$1 == current
-                            ? Icons.radio_button_checked
-                            : Icons.radio_button_unchecked,
-                        color: opt.$1 == current
-                            ? const Color(0xFF9575CD)
-                            : Colors.white38,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(opt.$2,
-                                style: TextStyle(
-                                  color: opt.$1 == current
-                                      ? const Color(0xFF9575CD)
-                                      : Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                )),
-                            const SizedBox(height: 3),
-                            Text(opt.$3,
-                                style: const TextStyle(
-                                    color: Colors.white54, fontSize: 11)),
-                          ],
-                        ),
-                      ),
-                    ]),
-                  ),
-                ),
-                const SizedBox(height: 10),
-              ],
-            ],
+          child: Text(
+            'Delivery commands always use side-push 0xFB after the slot '
+            'number. Before every delivery, the app first sends CMD 0xA2 '
+            'to clear any latched board fault from a previous failed vend.',
+            style: TextStyle(color: Colors.white54, fontSize: 12),
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, null),
-            child: const Text('Cancel',
-                style: TextStyle(color: Colors.white38)),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close', style: TextStyle(color: Colors.white38)),
           ),
         ],
-      ),
-    );
-
-    if (picked == null || picked == current) return;
-
-    await AppConfig.setMachineType(picked);
-    if (!mounted) return;
-    setState(() {});
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Machine type set to ${_machineTypeLabel(picked)}'),
-        backgroundColor: const Color(0xFF9575CD),
-        duration: const Duration(seconds: 3),
       ),
     );
   }
@@ -1255,7 +1193,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       await port.open();
       await port.setPortParameters(
           9600, UsbPort.DATABITS_8, UsbPort.STOPBITS_1, UsbPort.PARITY_NONE);
-      // Send Get Device ID frame
+      await port.write(VendingMachineService.buildClearFaultFrame());
+      await Future.delayed(const Duration(milliseconds: 400));
       await port.write(VendingMachineService.buildDeliveryFrame(0));
       await Future.delayed(const Duration(milliseconds: 800));
       await port.close();
@@ -1273,7 +1212,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFF0D1A2B),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF007ACC).withValues(alpha: 0.2)),
+        border:
+            Border.all(color: const Color(0xFF007ACC).withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1292,7 +1232,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
               AppConfig.backendMode == 'reyeah' ? 'Reyeah Cloud' : 'vms-cloud'),
           if (AppConfig.backendMode == 'reyeah') ...[
             _infoRow('Reyeah Machine', AppConfig.vmMachineNo),
-            _infoRow('App ID',
+            _infoRow(
+                'App ID',
                 AppConfig.vmAppId.isNotEmpty
                     ? '${AppConfig.vmAppId.substring(0, AppConfig.vmAppId.length.clamp(0, 8))}…'
                     : '—'),
@@ -1386,8 +1327,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                           fontSize: 15)),
                   const SizedBox(height: 3),
                   Text(subtitle,
-                      style: const TextStyle(
-                          color: Colors.white38, fontSize: 12)),
+                      style:
+                          const TextStyle(color: Colors.white38, fontSize: 12)),
                 ],
               ),
             ),
@@ -1430,7 +1371,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     if (!info.available) {
       _showSimpleDialog(
         title: 'You\'re up to date',
-        message: 'This kiosk is running version $currentVersion.\nNo newer version is available.',
+        message:
+            'This kiosk is running version $currentVersion.\nNo newer version is available.',
         color: const Color(0xFF388E3C),
       );
       return;
@@ -1446,7 +1388,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         title: const Row(children: [
           Icon(Icons.system_update_rounded, color: Color(0xFF388E3C)),
           SizedBox(width: 10),
-          Text('Update available', style: TextStyle(color: Colors.white, fontSize: 17)),
+          Text('Update available',
+              style: TextStyle(color: Colors.white, fontSize: 17)),
         ]),
         content: SingleChildScrollView(
           child: Column(
@@ -1455,7 +1398,9 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             children: [
               Text(
                 'Current: $currentVersion\nLatest:  ${info.versionName}',
-                style: const TextStyle(color: Colors.white70, fontSize: 13,
+                style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
                     fontFamily: 'monospace'),
               ),
               if (info.sizeBytes != null) ...[
@@ -1468,11 +1413,15 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
               if (info.releaseNotes.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 const Text('Release notes:',
-                    style: TextStyle(color: Color(0xFF007ACC), fontSize: 11,
-                        fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                    style: TextStyle(
+                        color: Color(0xFF007ACC),
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.5)),
                 const SizedBox(height: 6),
                 Text(info.releaseNotes,
-                    style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 12)),
               ],
               if (info.mandatory) ...[
                 const SizedBox(height: 16),
@@ -1481,11 +1430,14 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                   decoration: BoxDecoration(
                     color: Colors.orange.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+                    border:
+                        Border.all(color: Colors.orange.withValues(alpha: 0.4)),
                   ),
                   child: const Text(
                     'This is a MANDATORY update. The kiosk should not skip it.',
-                    style: TextStyle(color: Colors.orange, fontSize: 12,
+                    style: TextStyle(
+                        color: Colors.orange,
+                        fontSize: 12,
                         fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -1497,14 +1449,16 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           if (!info.mandatory)
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Later', style: TextStyle(color: Colors.white38)),
+              child:
+                  const Text('Later', style: TextStyle(color: Colors.white38)),
             ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF388E3C),
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
             ),
             child: const Text('Download & install'),
           ),
@@ -1520,7 +1474,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       if (!mounted) return;
       await _showSimpleDialog(
         title: 'Permission needed',
-        message: 'Android needs your permission to install apps from this source. '
+        message:
+            'Android needs your permission to install apps from this source. '
             'Tap OK to open the settings page, then toggle "Allow from this source" '
             'and try the update again.',
         color: const Color(0xFFFF9800),
@@ -1575,7 +1530,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     if (!launched) {
       _showSimpleDialog(
         title: 'Install failed',
-        message: 'Could not launch the system installer. The APK is saved at:\n$path',
+        message:
+            'Could not launch the system installer. The APK is saved at:\n$path',
         color: Colors.redAccent,
       );
     }
@@ -1601,8 +1557,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('OK',
-                style: TextStyle(color: Color(0xFF007ACC),
-                    fontWeight: FontWeight.bold)),
+                style: TextStyle(
+                    color: Color(0xFF007ACC), fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -1634,8 +1590,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel',
-                style: TextStyle(color: Colors.white38)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white38)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
@@ -1687,14 +1643,14 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel',
-                style: TextStyle(color: Colors.white38)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white38)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Reset',
-                style: TextStyle(color: Colors.redAccent,
-                    fontWeight: FontWeight.bold)),
+                style: TextStyle(
+                    color: Colors.redAccent, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -1725,8 +1681,8 @@ class _LotteryTokenPanel extends StatefulWidget {
 
 class _LotteryTokenPanelState extends State<_LotteryTokenPanel> {
   late final TextEditingController _ctrl;
-  bool _saving   = false;
-  bool _obscure  = true;
+  bool _saving = false;
+  bool _obscure = true;
   String? _saved;
 
   @override
@@ -1742,10 +1698,16 @@ class _LotteryTokenPanelState extends State<_LotteryTokenPanel> {
   }
 
   Future<void> _save() async {
-    setState(() { _saving = true; _saved = null; });
+    setState(() {
+      _saving = true;
+      _saved = null;
+    });
     await AppConfig.setLotteryToken(_ctrl.text);
     if (mounted) {
-      setState(() { _saving = false; _saved = 'Saved'; });
+      setState(() {
+        _saving = false;
+        _saved = 'Saved';
+      });
       widget.onSaved();
     }
   }
@@ -1770,7 +1732,9 @@ class _LotteryTokenPanelState extends State<_LotteryTokenPanel> {
         children: [
           Row(children: [
             Icon(
-              hasToken ? Icons.confirmation_num_rounded : Icons.confirmation_num_outlined,
+              hasToken
+                  ? Icons.confirmation_num_rounded
+                  : Icons.confirmation_num_outlined,
               color: hasToken ? Colors.greenAccent : Colors.white38,
               size: 16,
             ),
@@ -1797,11 +1761,12 @@ class _LotteryTokenPanelState extends State<_LotteryTokenPanel> {
                 showCursor: true,
                 enableInteractiveSelection: false,
                 obscureText: _obscure,
-                style: const TextStyle(color: Colors.white, fontSize: 13,
-                    fontFamily: 'monospace'),
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 13, fontFamily: 'monospace'),
                 decoration: InputDecoration(
                   hintText: 'Lottery draw token (per-lottery)',
-                  hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+                  hintStyle:
+                      const TextStyle(color: Colors.white24, fontSize: 13),
                   filled: true,
                   fillColor: const Color(0xFF060E18),
                   border: OutlineInputBorder(
@@ -1812,12 +1777,13 @@ class _LotteryTokenPanelState extends State<_LotteryTokenPanel> {
                     borderRadius: BorderRadius.circular(10),
                     borderSide: const BorderSide(color: Colors.white12),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 10),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscure ? Icons.visibility_off : Icons.visibility,
-                      color: Colors.white38, size: 16,
+                      color: Colors.white38,
+                      size: 16,
                     ),
                     onPressed: () => setState(() => _obscure = !_obscure),
                   ),
@@ -1839,17 +1805,20 @@ class _LotteryTokenPanelState extends State<_LotteryTokenPanel> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF007ACC),
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
               ),
               child: _saving
-                  ? const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2,
-                          color: Colors.white))
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
                   : Text(_saved ?? 'Save',
-                      style: const TextStyle(fontSize: 13,
-                          fontWeight: FontWeight.w600)),
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600)),
             ),
           ]),
           const SizedBox(height: 8),
@@ -1894,7 +1863,7 @@ class _ManagementTokenPanel extends StatefulWidget {
 
 class _ManagementTokenPanelState extends State<_ManagementTokenPanel> {
   late final TextEditingController _ctrl;
-  bool _saving  = false;
+  bool _saving = false;
   bool _obscure = true;
   String? _saved;
 
@@ -1911,10 +1880,16 @@ class _ManagementTokenPanelState extends State<_ManagementTokenPanel> {
   }
 
   Future<void> _save() async {
-    setState(() { _saving = true; _saved = null; });
+    setState(() {
+      _saving = true;
+      _saved = null;
+    });
     await AppConfig.setManagementToken(_ctrl.text);
     if (mounted) {
-      setState(() { _saving = false; _saved = 'Saved'; });
+      setState(() {
+        _saving = false;
+        _saved = 'Saved';
+      });
       widget.onSaved();
     }
   }
@@ -1939,7 +1914,9 @@ class _ManagementTokenPanelState extends State<_ManagementTokenPanel> {
         children: [
           Row(children: [
             Icon(
-              hasToken ? Icons.admin_panel_settings_rounded : Icons.warning_amber_rounded,
+              hasToken
+                  ? Icons.admin_panel_settings_rounded
+                  : Icons.warning_amber_rounded,
               color: hasToken ? const Color(0xFF7C3AED) : Colors.orange,
               size: 16,
             ),
@@ -1966,11 +1943,12 @@ class _ManagementTokenPanelState extends State<_ManagementTokenPanel> {
                 showCursor: true,
                 enableInteractiveSelection: false,
                 obscureText: _obscure,
-                style: const TextStyle(color: Colors.white, fontSize: 13,
-                    fontFamily: 'monospace'),
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 13, fontFamily: 'monospace'),
                 decoration: InputDecoration(
                   hintText: 'Management API Bearer token',
-                  hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+                  hintStyle:
+                      const TextStyle(color: Colors.white24, fontSize: 13),
                   filled: true,
                   fillColor: const Color(0xFF060E18),
                   border: OutlineInputBorder(
@@ -1981,12 +1959,13 @@ class _ManagementTokenPanelState extends State<_ManagementTokenPanel> {
                     borderRadius: BorderRadius.circular(10),
                     borderSide: const BorderSide(color: Colors.white12),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 10),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscure ? Icons.visibility_off : Icons.visibility,
-                      color: Colors.white38, size: 16,
+                      color: Colors.white38,
+                      size: 16,
                     ),
                     onPressed: () => setState(() => _obscure = !_obscure),
                   ),
@@ -2008,17 +1987,20 @@ class _ManagementTokenPanelState extends State<_ManagementTokenPanel> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF7C3AED),
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
               ),
               child: _saving
-                  ? const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2,
-                          color: Colors.white))
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
                   : Text(_saved ?? 'Save',
-                      style: const TextStyle(fontSize: 13,
-                          fontWeight: FontWeight.w600)),
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600)),
             ),
           ]),
           const SizedBox(height: 8),
@@ -2069,16 +2051,16 @@ class _ReyeahCredentialsPanelState extends State<_ReyeahCredentialsPanel> {
   late final TextEditingController _machineNoCtrl;
 
   bool _obscureSecret = true;
-  bool _saving        = false;
-  bool _testing       = false;
+  bool _saving = false;
+  bool _testing = false;
   String? _testResult;
-  bool _testOk        = false;
+  bool _testOk = false;
 
   @override
   void initState() {
     super.initState();
-    _baseUrlCtrl   = TextEditingController(text: AppConfig.vmBaseUrl);
-    _appIdCtrl     = TextEditingController(text: AppConfig.vmAppId);
+    _baseUrlCtrl = TextEditingController(text: AppConfig.vmBaseUrl);
+    _appIdCtrl = TextEditingController(text: AppConfig.vmAppId);
     _appSecretCtrl = TextEditingController(text: AppConfig.vmAppSecret);
     _machineNoCtrl = TextEditingController(text: AppConfig.vmMachineNo);
   }
@@ -2095,8 +2077,8 @@ class _ReyeahCredentialsPanelState extends State<_ReyeahCredentialsPanel> {
   Future<void> _save() async {
     setState(() => _saving = true);
     await AppConfig.saveReyeah(
-      baseUrl:   _baseUrlCtrl.text,
-      appId:     _appIdCtrl.text,
+      baseUrl: _baseUrlCtrl.text,
+      appId: _appIdCtrl.text,
       appSecret: _appSecretCtrl.text,
       machineNo: _machineNoCtrl.text,
     );
@@ -2114,19 +2096,22 @@ class _ReyeahCredentialsPanelState extends State<_ReyeahCredentialsPanel> {
   }
 
   Future<void> _test() async {
-    setState(() { _testing = true; _testResult = null; });
+    setState(() {
+      _testing = true;
+      _testResult = null;
+    });
     // Save first, then test
     await AppConfig.saveReyeah(
-      baseUrl:   _baseUrlCtrl.text,
-      appId:     _appIdCtrl.text,
+      baseUrl: _baseUrlCtrl.text,
+      appId: _appIdCtrl.text,
       appSecret: _appSecretCtrl.text,
       machineNo: _machineNoCtrl.text,
     );
     final err = await ReyeahService.testCredentials();
     if (mounted) {
       setState(() {
-        _testing    = false;
-        _testOk     = err == null;
+        _testing = false;
+        _testOk = err == null;
         _testResult = err ?? 'Connected successfully!';
       });
     }
@@ -2139,19 +2124,17 @@ class _ReyeahCredentialsPanelState extends State<_ReyeahCredentialsPanel> {
       decoration: BoxDecoration(
         color: const Color(0xFF0D1A2B),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-            color: const Color(0xFF00BCD4).withValues(alpha: 0.25)),
+        border:
+            Border.all(color: const Color(0xFF00BCD4).withValues(alpha: 0.25)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _credField('Base URL', _baseUrlCtrl,
-              hint: 'https://4020y425z1.uicp.fun',
-              icon: Icons.link_rounded),
+              hint: 'https://4020y425z1.uicp.fun', icon: Icons.link_rounded),
           const SizedBox(height: 12),
           _credField('App ID', _appIdCtrl,
-              hint: 'your_app_id',
-              icon: Icons.badge_outlined),
+              hint: 'your_app_id', icon: Icons.badge_outlined),
           const SizedBox(height: 12),
           _credField('App Secret', _appSecretCtrl,
               hint: '••••••••',
@@ -2161,16 +2144,14 @@ class _ReyeahCredentialsPanelState extends State<_ReyeahCredentialsPanel> {
                   setState(() => _obscureSecret = !_obscureSecret)),
           const SizedBox(height: 12),
           _credField('Machine No.', _machineNoCtrl,
-              hint: 'e.g. 866903255700003',
-              icon: Icons.devices_outlined),
+              hint: 'e.g. 866903255700003', icon: Icons.devices_outlined),
           const SizedBox(height: 16),
 
           // Test result banner
           if (_testResult != null)
             Container(
               margin: const EdgeInsets.only(bottom: 12),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: (_testOk ? Colors.green : Colors.redAccent)
                     .withValues(alpha: 0.08),
@@ -2308,8 +2289,8 @@ class _ReyeahCredentialsPanelState extends State<_ReyeahCredentialsPanel> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(
-                  color: Color(0xFF00BCD4), width: 1.5),
+              borderSide:
+                  const BorderSide(color: Color(0xFF00BCD4), width: 1.5),
             ),
           ),
           onTap: () => showKeypad(
@@ -2382,13 +2363,12 @@ Future<void> showAdminPinDialog(BuildContext context) async {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
-                      color: Color(0xFF007ACC), width: 1.5),
+                  borderSide:
+                      const BorderSide(color: Color(0xFF007ACC), width: 1.5),
                 ),
                 errorBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: Colors.redAccent),
+                  borderSide: const BorderSide(color: Colors.redAccent),
                 ),
               ),
               onTap: () async {
@@ -2412,8 +2392,8 @@ Future<void> showAdminPinDialog(BuildContext context) async {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: Colors.white38)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white38)),
           ),
           ElevatedButton(
             onPressed: () => _checkPin(
@@ -2463,9 +2443,11 @@ class _CheckingUpdateDialog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
-            width: 22, height: 22,
+            width: 22,
+            height: 22,
             child: CircularProgressIndicator(
-              color: Color(0xFF388E3C), strokeWidth: 2.5,
+              color: Color(0xFF388E3C),
+              strokeWidth: 2.5,
             ),
           ),
           SizedBox(width: 16),
@@ -2507,8 +2489,8 @@ class _DownloadingDialog extends StatelessWidget {
                   value: value > 0 ? value : null,
                   minHeight: 10,
                   backgroundColor: const Color(0xFF060E18),
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                      Color(0xFF388E3C)),
+                  valueColor:
+                      const AlwaysStoppedAnimation<Color>(Color(0xFF388E3C)),
                 ),
               ),
               const SizedBox(height: 12),
@@ -2639,8 +2621,8 @@ class _DispenseProgressDialogState extends State<_DispenseProgressDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final isDone = _stage == _DispenseStage.success ||
-        _stage == _DispenseStage.error;
+    final isDone =
+        _stage == _DispenseStage.success || _stage == _DispenseStage.error;
 
     return AlertDialog(
       backgroundColor: const Color(0xFF0D1A2B),
@@ -2664,11 +2646,13 @@ class _DispenseProgressDialogState extends State<_DispenseProgressDialog> {
             Row(
               children: [
                 SizedBox(
-                  width: 24, height: 24,
+                  width: 24,
+                  height: 24,
                   child: _stageIndicator(),
                 ),
                 const SizedBox(width: 16),
-                Expanded(child: Text(
+                Expanded(
+                    child: Text(
                   _stageDescription(),
                   style: TextStyle(
                     color: isDone
@@ -2692,8 +2676,8 @@ class _DispenseProgressDialogState extends State<_DispenseProgressDialog> {
                       color: Colors.redAccent.withValues(alpha: 0.3)),
                 ),
                 child: Text(_errorMsg,
-                    style: const TextStyle(
-                        color: Colors.redAccent, fontSize: 12)),
+                    style:
+                        const TextStyle(color: Colors.redAccent, fontSize: 12)),
               ),
             ],
           ],
