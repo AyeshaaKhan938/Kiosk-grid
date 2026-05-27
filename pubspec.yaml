@@ -1,7 +1,7 @@
 name: vmfs_lottery
 description: VMFS USA - Vending Machine Lottery System
 publish_to: 'none'
-version: 1.4.13+30
+version: 1.4.14+31
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
