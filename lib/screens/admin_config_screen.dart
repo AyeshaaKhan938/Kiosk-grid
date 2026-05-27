@@ -170,6 +170,20 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           ),
           const SizedBox(height: 12),
 
+          // ── Reset VMC + Home Lift (CMD 0xA1) — elevator recovery ──────
+          _buildAction(
+            icon: Icons.home_repair_service_rounded,
+            label: 'Reset VMC / Home Lift',
+            subtitle: 'Sends CMD 0xA1 to fully reset the Reyeah control '
+                'board. On elevator machines this also drives the lift '
+                'platform back to its home (bottom) position. Use this '
+                'when the lift is parked at the wrong floor and dispenses '
+                'silently fail.',
+            color: const Color(0xFFEF5350),
+            onTap: _resetVmc,
+          ),
+          const SizedBox(height: 12),
+
           // ── Clear board faults (CMD 0xA2) — admin recovery ─────────────
           _buildAction(
             icon: Icons.restart_alt_rounded,
@@ -789,6 +803,77 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                           'Dispense Slot — the VMC now knows each floor\'s '
                           'height and only needs this calibration once per '
                           'machine.'
+                      : 'Failed: ${result?.errorMessage ?? "Unknown error"}',
+                  style: TextStyle(
+                    color: ok ? Colors.greenAccent : Colors.redAccent,
+                    fontSize: 13,
+                  ),
+                )),
+              ]),
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close',
+                style: TextStyle(color: Color(0xFF007ACC))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Reset VMC / Home lift (CMD 0xA1) ─────────────────────────────────────
+
+  Future<void> _resetVmc() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1A2B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(children: [
+          Icon(Icons.home_repair_service_rounded, color: Color(0xFFEF5350)),
+          SizedBox(width: 10),
+          Expanded(child: Text('Reset VMC / Home Lift',
+              style: TextStyle(color: Colors.white, fontSize: 17))),
+        ]),
+        content: FutureBuilder<DispenseResult>(
+          future: VendingMachineService.resetVmcViaGate(),
+          builder: (_, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const SizedBox(
+                width: 320,
+                child: Row(children: [
+                  SizedBox(width: 22, height: 22,
+                      child: CircularProgressIndicator(
+                          color: Color(0xFFEF5350), strokeWidth: 2.5)),
+                  SizedBox(width: 14),
+                  Expanded(child: Text(
+                    'Sending CMD 0xA1 reset… the lift platform will '
+                    'travel back to its home position. About 10 seconds.',
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  )),
+                ]),
+              );
+            }
+            final result = snap.data;
+            final ok = result?.status == DispenseStatus.success;
+            return SizedBox(
+              width: 320,
+              child: Row(children: [
+                Icon(
+                  ok ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                  color: ok ? Colors.greenAccent : Colors.redAccent,
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Text(
+                  ok
+                      ? 'Reset sent. The lift should now be at its home '
+                          'position. Run a Test Dispense to confirm — the '
+                          'lift should travel to the slot\'s floor before '
+                          'the push axis engages.'
                       : 'Failed: ${result?.errorMessage ?? "Unknown error"}',
                   style: TextStyle(
                     color: ok ? Colors.greenAccent : Colors.redAccent,
