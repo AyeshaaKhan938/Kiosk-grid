@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/machine_slot.dart';
 import '../services/api_service.dart';
+import '../services/lottery_availability_service.dart';
 import '../widgets/onscreen_keypad.dart';
 import 'result_screen.dart';
 
@@ -39,6 +40,12 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
   _State _state = _State.idle;
   String _errorMsg = '';
 
+  /// Result of the on-init availability check.
+  ///   null   → still checking, show a small spinner
+  ///   .available == true   → render the normal keypad flow
+  ///   .available == false  → render the out-of-stock card instead, no keypad
+  LotteryAvailability? _availability;
+
   bool get _canSubmit =>
       _state != _State.validating && _codeCtrl.text.trim().length >= 4;
 
@@ -49,6 +56,15 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
     // layout to settle and then scroll the list to its bottom so the input
     // sits just above the keyboard instead of being trapped behind it.
     _focusNode.addListener(_onFocusChanged);
+    // Ask the backend whether any lottery-eligible slot has stock right
+    // now. If not, swap the UI to an out-of-stock card so the customer
+    // doesn't bother typing a code that would only return 503 NO_STOCK.
+    _checkAvailability();
+  }
+
+  Future<void> _checkAvailability() async {
+    final result = await LotteryAvailabilityService.check();
+    if (mounted) setState(() => _availability = result);
   }
 
   void _onFocusChanged() {
@@ -141,6 +157,31 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
             // everything still fits. On the production 1:2 portrait
             // kiosk (h ≈ 2w) min(w, h/1.8) ≈ w, so sizes are unaffected.
             final scale = math.min(w, h / 1.8);
+
+            // ── Availability gate ────────────────────────────────────
+            // Loading: small spinner while the on-init check completes.
+            if (_availability == null) {
+              return Center(
+                child: SizedBox(
+                  width: scale * 0.08,
+                  height: scale * 0.08,
+                  child: const CircularProgressIndicator(
+                    color: Color(0xFF007ACC),
+                    strokeWidth: 3,
+                  ),
+                ),
+              );
+            }
+            // Unavailable: every lottery-eligible slot is out of stock.
+            // Skip the keypad UI entirely; show the out-of-stock card
+            // with a Back button that returns the customer to idle.
+            if (!_availability!.available) {
+              return _OutOfStockCard(
+                scale: scale,
+                onBack: () => Navigator.pop(context),
+              );
+            }
+            // ── Normal flow: the keypad + code entry layout ──────────
 
             return Stack(
               children: [
@@ -534,6 +575,97 @@ class _BackButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Out-of-stock card
+//
+// Rendered in place of the code-entry keypad when the backend reports zero
+// lottery-eligible slots in stock for this machine. The customer sees a
+// clear "come back later" message instead of typing a code that would only
+// fail with 503 NO_STOCK on submit.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _OutOfStockCard extends StatelessWidget {
+  final double scale;
+  final VoidCallback onBack;
+
+  const _OutOfStockCard({required this.scale, required this.onBack});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: scale * 0.08),
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: scale * 0.08,
+                vertical: scale * 0.10,
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0D1A2B),
+                borderRadius: BorderRadius.circular(scale * 0.04),
+                border: Border.all(
+                  color: Colors.redAccent.withValues(alpha: 0.4),
+                  width: 1.5,
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.remove_shopping_cart_rounded,
+                    color: Colors.redAccent,
+                    size: scale * 0.20,
+                  ),
+                  SizedBox(height: scale * 0.04),
+                  Text(
+                    'OUT OF STOCK',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: scale * 0.09,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 3,
+                    ),
+                  ),
+                  SizedBox(height: scale * 0.02),
+                  Text(
+                    'This machine has run out of\nlottery prizes for now.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: scale * 0.045,
+                      height: 1.4,
+                    ),
+                  ),
+                  SizedBox(height: scale * 0.015),
+                  Text(
+                    'Please come back later — thanks for your patience!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white38,
+                      fontSize: scale * 0.032,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        // Same back button position the main flow uses — keeps the visual
+        // anchor consistent so the customer's eye knows how to exit.
+        Positioned(
+          top: scale * 0.02,
+          left: scale * 0.03,
+          child: _BackButton(scale: scale, onTap: onBack),
+        ),
+      ],
     );
   }
 }
