@@ -31,6 +31,7 @@ const int _kHeaderApp = 0x55; // App → VMC
 // ── Comandos ──────────────────────────────────────────────────────────────────
 const int _kCmdDelivery        = 0x41; // Despachar producto
 const int _kCmdQueryStatus     = 0xE1; // Consultar estado
+const int _kCmdReset           = 0xA1; // Full VMC reset — also homes the lift
 const int _kCmdClearFault      = 0xA2; // Limpiar fallo
 const int _kCmdSetFloorHeight  = 0x21; // Set lift floor height (elevator only)
 
@@ -145,6 +146,18 @@ class VendingMachineService {
   /// CMD 0xA2 — Limpiar fallo.
   static Uint8List buildClearFaultFrame() =>
       _buildFrame(_kCmdClearFault, [0xFF]);
+
+  /// CMD 0xA1 — Full VMC reset.
+  ///
+  /// Frame: FF | 00 | 55 | A1 | 01 | FF | CHK
+  ///
+  /// Returns the lift platform to its home (bottom) position and resets
+  /// internal state machines. Mirrors factory.apk's `onResetSend()`. Use
+  /// this when the lift has parked at an unexpected floor and won't move
+  /// during normal dispenses — typically after a calibration that didn't
+  /// complete its homing leg.
+  static Uint8List buildResetVmcFrame() =>
+      _buildFrame(_kCmdReset, [0xFF]);
 
   /// CMD 0x21 — Enable lift-platform auto-height-detection.
   ///
@@ -374,6 +387,62 @@ class VendingMachineService {
       await TtySerial.write(buildClearFaultFrame());
       // Drain any echo so it doesn't pollute the next dispense's read.
       await TtySerial.read(timeout: const Duration(milliseconds: 400));
+      return const DispenseResult(status: DispenseStatus.success);
+    } catch (e) {
+      return DispenseResult(
+        status: DispenseStatus.error,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
+  /// Send CMD 0xA1 (Reset VMC) through the dispense gate. Brings the
+  /// lift platform back to its home position and resets the VMC's
+  /// internal state. Used when the lift has gotten stuck at an
+  /// unexpected floor (e.g. parked at the top after a half-completed
+  /// calibration). The VMC takes a few seconds to physically run the
+  /// lift back down, so we hold the gate for ~10 s.
+  static Future<DispenseResult> resetVmcViaGate() async {
+    if (kIsWeb) {
+      return const DispenseResult(
+        status: DispenseStatus.error,
+        errorMessage: 'VMC reset only works on the tablet.',
+      );
+    }
+    return _withDispenseGate(_resetVmcImpl);
+  }
+
+  static Future<DispenseResult> _resetVmcImpl() async {
+    try {
+      final opened = await TtySerial.open(AppConfig.ttyPath, baud: 9600);
+      if (!opened) {
+        return const DispenseResult(
+          status: DispenseStatus.error,
+          errorMessage: 'TtySerial.open returned false',
+        );
+      }
+
+      final frame = buildResetVmcFrame();
+      LogFileUtil.i('vmc.reset.send', {
+        'frame': frame
+            .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
+            .join(' '),
+      });
+      await TtySerial.write(frame);
+
+      // Drain the echo (FF 00 AA A1 ...) — best-effort.
+      try {
+        final echo = await TtySerial.read(
+          timeout: const Duration(milliseconds: 600),
+        );
+        LogFileUtil.i('vmc.reset.echo', {'bytes': echo.length.toString()});
+      } catch (_) {}
+
+      // Hold the gate while the lift physically runs back to home.
+      // Field-observed travel time is ~6 s end-to-end; 10 s pad is safe.
+      await Future<void>.delayed(const Duration(seconds: 10));
+      LogFileUtil.i('vmc.reset.complete');
+
       return const DispenseResult(status: DispenseStatus.success);
     } catch (e) {
       return DispenseResult(
