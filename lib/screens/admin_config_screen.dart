@@ -238,10 +238,23 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           // ── List TTY Devices + pick the one wired to the motor ─────────
           _buildAction(
             icon: Icons.cable_rounded,
-            label: 'TTY Serial Port',
-            subtitle: 'Currently: ${AppConfig.ttyPath}. Tap to list available /dev/ttyS* devices and pick the one connected to the Reyeah board.',
+            label: 'TTY Serial Port (main VMC)',
+            subtitle: 'Currently: ${AppConfig.ttyPath}. Main UART — dispense, status, clear fault. Tap to pick from available /dev/ttyS* devices.',
             color: const Color(0xFFFF6F00),
             onTap: _pickTtyDevice,
+          ),
+          const SizedBox(height: 12),
+
+          // Second UART for elevator-capable machines — the lift
+          // platform's MCU listens on a separate port (factory.apk's
+          // PostUtil.port_forlifter, default /dev/ttyS8). Calibrate
+          // commands are routed here.
+          _buildAction(
+            icon: Icons.swap_calls_rounded,
+            label: 'Lift Platform TTY Port (elevator only)',
+            subtitle: 'Currently: ${AppConfig.ttyPathLift}. Second UART for the lift platform on T1-02 / T11-PRO / S4 hardware. Calibrate Lift uses this. Tap to override.',
+            color: const Color(0xFFAB47BC),
+            onTap: _pickLiftTtyDevice,
           ),
           const SizedBox(height: 12),
 
@@ -1185,6 +1198,129 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       SnackBar(
         content: Text('TTY port set to $picked'),
         backgroundColor: const Color(0xFFFF6F00),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  // ── Pick Lift Platform TTY Device (elevator's second UART) ───────────────
+
+  Future<void> _pickLiftTtyDevice() async {
+    final devices = await TtySerial.listDevices();
+
+    if (!mounted) return;
+
+    if (devices.isEmpty) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: const Color(0xFF0D1A2B),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.swap_calls_rounded, color: Color(0xFFAB47BC)),
+              SizedBox(width: 10),
+              Text('TTY Devices',
+                  style: TextStyle(color: Colors.white, fontSize: 17)),
+            ],
+          ),
+          content: const Text(
+            'No /dev/ttyS* or /dev/ttyUSB* devices found.\n\n'
+            'TTY listing only works on the physical Android tablet — '
+            'Chrome/desktop returns an empty list.',
+            style: TextStyle(color: Colors.redAccent, fontSize: 12),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close',
+                  style: TextStyle(color: Color(0xFF007ACC))),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final current = AppConfig.ttyPathLift;
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1A2B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.swap_calls_rounded, color: Color(0xFFAB47BC)),
+            SizedBox(width: 10),
+            Text('Pick Lift TTY Device',
+                style: TextStyle(color: Colors.white, fontSize: 17)),
+          ],
+        ),
+        content: SizedBox(
+          width: 320,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Select the /dev/ttyS* port wired to the elevator lift '
+                "platform's MCU. On Reyeah T1-02 / T11-PRO / S4 hardware "
+                'this is /dev/ttyS8 by default. The main VMC port (above) '
+                'should be a different device.',
+                style: TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              const SizedBox(height: 14),
+              for (final path in devices)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  leading: Icon(
+                    path == current
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    color: path == current
+                        ? const Color(0xFFAB47BC)
+                        : Colors.white38,
+                    size: 20,
+                  ),
+                  title: Text(
+                    path,
+                    style: TextStyle(
+                      color: path == current
+                          ? const Color(0xFFAB47BC)
+                          : Colors.white,
+                      fontSize: 13,
+                      fontFamily: 'monospace',
+                      fontWeight: path == current
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                    ),
+                  ),
+                  onTap: () => Navigator.pop(context, path),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('Cancel',
+                style: TextStyle(color: Colors.white38)),
+          ),
+        ],
+      ),
+    );
+
+    if (picked == null || picked == current) return;
+
+    await AppConfig.setTtyPathLift(picked);
+    if (!mounted) return;
+    setState(() {});
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Lift TTY port set to $picked'),
+        backgroundColor: const Color(0xFFAB47BC),
         duration: const Duration(seconds: 2),
       ),
     );
