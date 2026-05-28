@@ -49,6 +49,12 @@ class AppConfig {
   // port (ttyS1..ttyS10, or ttyUSB5 for USB-to-serial cables).
   static const _kTtyPath = 'cfg_tty_path';
 
+  // Separate UART for the lift platform on elevator-capable machines.
+  // Factory.apk's PostUtil.port_forlifter — Reyeah wires the lift to a
+  // different /dev/ttyS* than the main VMC. Defaults to /dev/ttyS8;
+  // admin can override via "Lift Platform TTY Port" picker.
+  static const _kTtyPathLift = 'cfg_tty_path_lift';
+
   // Machine hardware family — controls the second byte of the CMD 0x41
   // delivery frame:
   //   'coil'      → byte = qty (number of units to dispense, usually 1)
@@ -215,6 +221,29 @@ class AppConfig {
 
   static Future<void> setTtyPath(String path) async =>
       _prefs?.setString(_kTtyPath, path.trim());
+
+  /// Path of the SECOND /dev/ttyS* device — the one wired to the lift
+  /// platform on elevator-capable machines (T1-02 / T11-PRO / S4).
+  ///
+  /// Reyeah's elevator hardware splits control across two UARTs:
+  ///   - [ttyPath]      → main VMC (dispense motors, status query,
+  ///                       clear-fault on row 1 slots)
+  ///   - [ttyPathLift]  → lift platform (CMD 0x21 calibrate, CMD 0xA1
+  ///                       home, anything that physically moves the
+  ///                       elevator car between floors)
+  ///
+  /// Factory.apk's `PostUtil.port_forlifter` defaults this to
+  /// /dev/ttyS8 on the lift-capable hardware variants we've seen.
+  /// Coil-only machines don't have this port and the constant is
+  /// unused — the kiosk's Calibrate / Reset tiles are no-ops on those.
+  static String get ttyPathLift {
+    final stored = _prefs?.getString(_kTtyPathLift);
+    if (stored != null && stored.isNotEmpty) return stored;
+    return dotenv.env['TTY_PATH_LIFT'] ?? '/dev/ttyS8';
+  }
+
+  static Future<void> setTtyPathLift(String path) async =>
+      _prefs?.setString(_kTtyPathLift, path.trim());
 
   /// Machine hardware family. Drives the second byte of the CMD 0x41
   /// delivery frame:

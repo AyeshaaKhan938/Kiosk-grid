@@ -470,16 +470,27 @@ class VendingMachineService {
 
   static Future<DispenseResult> _calibrateLiftImpl() async {
     try {
-      final opened = await TtySerial.open(AppConfig.ttyPath, baud: 9600);
+      // CRITICAL: lift platform listens on a DIFFERENT UART than the
+      // main VMC. Factory.apk's PostUtil hard-codes
+      // `port_forlifter = "/dev/ttyS8"`. Sending CMD 0x21 to the main
+      // VMC port does nothing because the lift's microcontroller isn't
+      // wired to that bus. The kiosk picks ttyPathLift here (default
+      // /dev/ttyS8, overridable via admin) so the calibration command
+      // actually reaches the lift's MCU.
+      final liftPath = AppConfig.ttyPathLift;
+      LogFileUtil.i('lift.calibrate.open_port', {'path': liftPath});
+
+      final opened = await TtySerial.open(liftPath, baud: 9600);
       if (!opened) {
-        return const DispenseResult(
+        return DispenseResult(
           status: DispenseStatus.error,
-          errorMessage: 'TtySerial.open returned false',
+          errorMessage: 'TtySerial.open returned false on $liftPath',
         );
       }
 
       final frame = buildCalibrateLiftFrame();
       LogFileUtil.i('lift.calibrate.send', {
+        'path': liftPath,
         'frame': frame
             .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
             .join(' '),
