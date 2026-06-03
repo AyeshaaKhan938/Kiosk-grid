@@ -35,14 +35,13 @@ const int _kCmdReset           = 0xA1; // Full VMC reset — also homes the lift
 const int _kCmdClearFault      = 0xA2; // Limpiar fallo
 const int _kCmdSetFloorHeight  = 0x21; // Set lift floor height (elevator only)
 
-// ── Axis types (elevator / lift machines only) ──────────────────────────────
-// On lift-capable hardware (T1-02 / T11-PRO / S4) the second byte of CMD 0x41
-// is *not* a quantity — it's the axis type the VMC should engage after the
-// lift platform reaches the slot's floor:
-//   0xFF (-1 signed) = spring   — same coil-style turn as on non-lift machines
-//   0xFB (-5 signed) = side push — the elevator-platform pusher rod
-// Coil-only machines treat the same byte as `qty` (number of units to drop).
-const int _kAxisSpring   = 0xFF;
+// ── CMD 0x41 second-byte constant ───────────────────────────────────────────
+// Hardcoded to 0xFB (side-push). This is the axis type the Reyeah control
+// board engages on every CMD 0x41 dispense. Confirmed by Reyeah field
+// support (EDY, commit 8b2e096) as the correct delivery byte for this
+// control board family — qty-style values (0x01) silently no-op on the
+// push axis, which is why pre-1.4.19 dispenses appeared successful at the
+// app but never physically dropped product.
 const int _kAxisSidePush = 0xFB;
 
 /// Estados del flujo de despacho.
@@ -114,29 +113,22 @@ class VendingMachineService {
 
   /// CMD 0x41 — Dispense [slot].
   ///
-  /// Frame: FF | 00 | 55 | 41 | 02 | slot | <second byte> | CHK
+  /// Frame: FF | 00 | 55 | 41 | 02 | slot | 0xFB | CHK
   ///
-  /// The meaning of the second byte depends on the machine family
-  /// configured in [AppConfig.machineType]:
-  ///   - 'coil'     → byte = [qty] (number of units to drop, usually 1)
-  ///   - 'elevator' → byte = axis type the VMC should engage after the
-  ///                  lift platform reaches the slot's floor. Defaults
-  ///                  to side-push (0xFB), which is what every T1-02 /
-  ///                  T11-PRO / S4 vending machine we've shipped to a
-  ///                  client uses.
+  /// The second byte is fixed to **0xFB (side-push)** for every
+  /// dispense. Reyeah field support (EDY, commit 8b2e096) confirmed
+  /// this is the correct delivery byte for this control board family.
   ///
-  /// Hardcoding `0x01` (the old behavior) worked on coil machines
-  /// because that's a valid qty. On elevator machines the VMC reads
-  /// it as "use spring axis index 1" — which doesn't map to any
-  /// physical axis, so the push never fires. The dispense looks like
-  /// it succeeded (echo comes back) but nothing actually drops.
-  static Uint8List buildDeliveryFrame(int slot, {int qty = 1}) {
-    final int secondByte = switch (AppConfig.machineType) {
-      'elevator'        => _kAxisSidePush,
-      'elevator-spring' => _kAxisSpring,
-      _                 => qty & 0xFF,
-    };
-    return _buildFrame(_kCmdDelivery, [slot & 0xFF, secondByte]);
+  /// The old behavior switched on `AppConfig.machineType` to pick
+  /// between qty / side-push / spring — but in practice every machine
+  /// we ship to is the elevator T1-02 variant, and `0x01 qty` never
+  /// fires the push axis (the dispense echoes "success" but no product
+  /// drops). Hardcoding 0xFB removes that footgun.
+  ///
+  /// The `AppConfig.machineType` setting is now cosmetic — the toggle
+  /// in admin still saves but does not affect the frame.
+  static Uint8List buildDeliveryFrame(int slot) {
+    return _buildFrame(_kCmdDelivery, [slot & 0xFF, _kAxisSidePush]);
   }
 
   /// CMD 0xE1 — Consultar estado de la máquina.
@@ -632,7 +624,29 @@ class VendingMachineService {
       );
     }
 
-    // 2. Write the delivery frame.
+    // 2. Clear latched board faults BEFORE every dispense.
+    //    Reyeah field support (EDY, commit 8b2e096) confirmed the VMC
+    //    holds a fault state internally after any failed vend, and the
+    //    next CMD 0x41 silently no-ops until CMD 0xA2 explicitly clears
+    //    it. Sending 0xA2 proactively before every 0x41 means a slot
+    //    that failed once isn't poisoned for the next customer.
+    final clearFrame = buildClearFaultFrame();
+    LogFileUtil.i('tty.write', {
+      'cmd': '0xA2',
+      'bytes': clearFrame
+          .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
+          .join(' '),
+    });
+    await TtySerial.write(clearFrame);
+    // Brief drain so the clear-fault echo doesn't show up as the
+    // 0x41 echo we read next.
+    try {
+      await TtySerial.read(timeout: const Duration(milliseconds: 200));
+    } catch (_) {
+      // Best-effort; the actual dispense fires regardless.
+    }
+
+    // 3. Write the delivery frame.
     final frame = buildDeliveryFrame(lineNumber);
     LogFileUtil.i('tty.write', {
       'cmd': '0x41',
