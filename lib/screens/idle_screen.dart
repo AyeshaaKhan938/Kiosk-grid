@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import '../models/advertisement.dart';
 import '../services/advertisement_service.dart';
 import '../services/app_config.dart';
+import '../services/lottery_stock_service.dart';
 import '../services/update_checker.dart';
 import '../services/update_service.dart';
+import '../widgets/lottery_stock_shell.dart';
 import 'admin_config_screen.dart';
 import 'lottery_code_screen.dart';
 
@@ -196,6 +198,7 @@ class _IdleScreenState extends State<IdleScreen>
 
   // ── Tap → LotteryCodeScreen (push, not replace — so back returns to ads) ──
   void _onTap() {
+    if (LotteryStockService.instance.isOutOfStock) return;
     Navigator.of(context).push(PageRouteBuilder(
       pageBuilder: (_, animation, __) => const LotteryCodeScreen(),
       transitionsBuilder: (_, animation, __, child) => FadeTransition(
@@ -215,7 +218,8 @@ class _IdleScreenState extends State<IdleScreen>
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: Semantics(
+      body: LotteryStockShell(
+        child: Semantics(
         label: 'VMFS USA vending machine kiosk. Touch anywhere to enter your lottery code.',
         button: true,
         child: Stack(
@@ -263,6 +267,7 @@ class _IdleScreenState extends State<IdleScreen>
             ),
           ],
         ),
+      ),
       ),
     );
   }

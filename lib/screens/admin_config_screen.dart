@@ -2549,6 +2549,120 @@ class _ReyeahCredentialsPanelState extends State<_ReyeahCredentialsPanel> {
 
 // ── PIN Dialog ────────────────────────────────────────────────────────────────
 
+/// Returns true when the operator enters the correct admin PIN.
+/// Does not navigate to [AdminConfigScreen].
+Future<bool> verifyAdminPin(BuildContext context) async {
+  final result = await showDialog<bool>(
+    context: context,
+    barrierDismissible: true,
+    builder: (ctx) => const _PinVerifyDialog(),
+  );
+  return result == true;
+}
+
+/// PIN dialog that owns its [TextEditingController] lifecycle.
+class _PinVerifyDialog extends StatefulWidget {
+  const _PinVerifyDialog();
+
+  @override
+  State<_PinVerifyDialog> createState() => _PinVerifyDialogState();
+}
+
+class _PinVerifyDialogState extends State<_PinVerifyDialog> {
+  final _controller = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_controller.text.trim() == AppConfig.adminPin) {
+      Navigator.pop(context, true);
+    } else {
+      setState(() => _error = 'Incorrect PIN');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF0D1A2B),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: const Row(
+        children: [
+          Icon(Icons.lock_outline, color: Color(0xFF007ACC), size: 22),
+          SizedBox(width: 10),
+          Text('Admin PIN',
+              style: TextStyle(color: Colors.white, fontSize: 18)),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Enter admin PIN to continue.',
+            style: TextStyle(color: Colors.white54, fontSize: 13),
+          ),
+          const SizedBox(height: 20),
+          TextField(
+            controller: _controller,
+            obscureText: true,
+            keyboardType: TextInputType.number,
+            autofocus: true,
+            textAlign: TextAlign.center,
+            maxLength: 8,
+            style: const TextStyle(
+                color: Colors.white, fontSize: 22, letterSpacing: 8),
+            decoration: InputDecoration(
+              counterText: '',
+              hintText: '••••',
+              hintStyle: const TextStyle(color: Colors.white24),
+              errorText: _error,
+              errorStyle: const TextStyle(color: Colors.redAccent),
+              filled: true,
+              fillColor: const Color(0xFF060E18),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Colors.white12),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(
+                    color: Color(0xFF007ACC), width: 1.5),
+              ),
+              errorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Colors.redAccent),
+              ),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel',
+              style: TextStyle(color: Colors.white38)),
+        ),
+        ElevatedButton(
+          onPressed: _submit,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF007ACC),
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
+          ),
+          child: const Text('Confirm'),
+        ),
+      ],
+    );
+  }
+}
+
 /// Muestra el diálogo de PIN y, si es correcto, abre [AdminConfigScreen].
 /// Llama esto desde el gesto secreto en cualquier pantalla.
 Future<void> showAdminPinDialog(BuildContext context) async {

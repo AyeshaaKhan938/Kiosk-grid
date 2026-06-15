@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../models/machine_slot.dart';
 import '../services/api_service.dart';
 import '../services/lottery_availability_service.dart';
+import '../services/lottery_stock_service.dart';
+import '../widgets/lottery_stock_shell.dart';
 import '../widgets/onscreen_keypad.dart';
 import 'result_screen.dart';
 
@@ -93,6 +95,11 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
     final code = _codeCtrl.text.trim().toUpperCase();
     if (code.isEmpty) return;
 
+    if (LotteryStockService.instance.isOutOfStock) {
+      _showError('Prizes are currently out of stock.');
+      return;
+    }
+
     _focusNode.unfocus();
     setState(() { _state = _State.validating; _errorMsg = ''; });
 
@@ -104,6 +111,8 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
         _showError('This code has already been redeemed.');
         return;
       }
+
+      await LotteryStockService.instance.decrement();
 
       Navigator.pushReplacement(
         context,
@@ -147,7 +156,8 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
       // enough to keep the input visible above the keyboard, and snap back
       // when the keyboard closes.
       resizeToAvoidBottomInset: true,
-      body: SafeArea(
+      body: LotteryStockShell(
+        child: SafeArea(
         child: LayoutBuilder(
           builder: (ctx, constraints) {
             final w = constraints.maxWidth;
@@ -405,6 +415,7 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
               ],
             );
           },
+        ),
         ),
       ),
     );
