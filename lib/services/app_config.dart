@@ -52,6 +52,9 @@ class AppConfig {
   static const _kTtyPath = 'cfg_tty_path';
 
   static SharedPreferences? _prefs;
+  // Lift platform serial port (re-added so AppConfig.ttyPathLift resolves).
+static String get ttyPathLift =>
+    _prefs?.getString('cfg_tty_path_lift') ?? '/dev/ttyS8';
 
   // ── Production fallbacks (baked into the APK) ─────────────────────────────
   // These values win when the .env entry is missing AND when the operator
