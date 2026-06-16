@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'app_config.dart';
 import 'dispense_wake_lock.dart';
 import 'log_file_util.dart';
+import 'serial_frame_assembler.dart';
 import 'tty_serial.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,28 +22,24 @@ import 'tty_serial.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Bytes fijos de la trama ───────────────────────────────────────────────────
-const int _kAddrByte  = 0xFF;
-const int _kFrameNum  = 0x00;
+const int _kAddrByte = 0xFF;
+const int _kFrameNum = 0x00;
 const int _kHeaderApp = 0x55; // App → VMC
 // _kHeaderVmc (0xAA) was the response-side header; removed alongside the
 // read+status-query path. Restore from git history if/when the JNI is
 // patched and we re-enable response parsing.
 
 // ── Comandos ──────────────────────────────────────────────────────────────────
-const int _kCmdDelivery        = 0x41; // Despachar producto
-const int _kCmdQueryStatus     = 0xE1; // Consultar estado
-const int _kCmdReset           = 0xA1; // Full VMC reset — also homes the lift
-const int _kCmdClearFault      = 0xA2; // Limpiar fallo
-const int _kCmdSetFloorHeight  = 0x21; // Set lift floor height (elevator only)
+const int _kCmdDelivery = 0x41; // Despachar producto
+const int _kCmdQueryStatus = 0xE1; // Consultar estado
+const int _kCmdClearFault = 0xA2; // Limpiar fallo
+const int _kCmdQueryFloorHeight = 0x20; // Query lift floor heights
+const int _kCmdSetFloorHeight = 0x21; // Set lift floor height (elevator only)
+const int _kCmdVmcLog = 0x03; // Export VMC log
 
-// ── CMD 0x41 second-byte constant ───────────────────────────────────────────
-// Hardcoded to 0xFB (side-push). This is the axis type the Reyeah control
-// board engages on every CMD 0x41 dispense. Confirmed by Reyeah field
-// support (EDY, commit 8b2e096) as the correct delivery byte for this
-// control board family — qty-style values (0x01) silently no-op on the
-// push axis, which is why pre-1.4.19 dispenses appeared successful at the
-// app but never physically dropped product.
-const int _kAxisSidePush = 0xFB;
+// CMD 0x41 second data byte. This hardware must always use side-push:
+//   FF 00 55 41 02 <slot> FB <chk>
+const int _kDeliverySidePush = 0xFB;
 
 /// Estados del flujo de despacho.
 enum DispenseStatus { sending, waitingConfirm, success, error }
@@ -52,6 +49,32 @@ class DispenseResult {
   final DispenseStatus status;
   final String? errorMessage;
   const DispenseResult({required this.status, this.errorMessage});
+}
+
+class FloorHeightsResult {
+  final bool success;
+  final List<int> heights;
+  final String? errorMessage;
+  final String? rawHex;
+
+  const FloorHeightsResult({
+    required this.success,
+    this.heights = const [],
+    this.errorMessage,
+    this.rawHex,
+  });
+}
+
+class VmcLogResult {
+  final bool success;
+  final String text;
+  final String? errorMessage;
+
+  const VmcLogResult({
+    required this.success,
+    this.text = '',
+    this.errorMessage,
+  });
 }
 
 /// Servicio de comunicación con el Control Board de la vending machine.
@@ -103,7 +126,11 @@ class VendingMachineService {
       chk = (chk + b) & 0xFF;
     }
     return Uint8List.fromList([
-      _kAddrByte, _kFrameNum, _kHeaderApp, cmd, dataLen,
+      _kAddrByte,
+      _kFrameNum,
+      _kHeaderApp,
+      cmd,
+      dataLen,
       ...data,
       chk,
     ]);
@@ -115,20 +142,10 @@ class VendingMachineService {
   ///
   /// Frame: FF | 00 | 55 | 41 | 02 | slot | 0xFB | CHK
   ///
-  /// The second byte is fixed to **0xFB (side-push)** for every
-  /// dispense. Reyeah field support (EDY, commit 8b2e096) confirmed
-  /// this is the correct delivery byte for this control board family.
-  ///
-  /// The old behavior switched on `AppConfig.machineType` to pick
-  /// between qty / side-push / spring — but in practice every machine
-  /// we ship to is the elevator T1-02 variant, and `0x01 qty` never
-  /// fires the push axis (the dispense echoes "success" but no product
-  /// drops). Hardcoding 0xFB removes that footgun.
-  ///
-  /// The `AppConfig.machineType` setting is now cosmetic — the toggle
-  /// in admin still saves but does not affect the frame.
+  /// The second byte is fixed to 0xFB (side-push). Do not use quantity 0x01
+  /// here; this control board expects `<slot> FB` for delivery.
   static Uint8List buildDeliveryFrame(int slot) {
-    return _buildFrame(_kCmdDelivery, [slot & 0xFF, _kAxisSidePush]);
+    return _buildFrame(_kCmdDelivery, [slot & 0xFF, _kDeliverySidePush]);
   }
 
   /// CMD 0xE1 — Consultar estado de la máquina.
@@ -139,17 +156,34 @@ class VendingMachineService {
   static Uint8List buildClearFaultFrame() =>
       _buildFrame(_kCmdClearFault, [0xFF]);
 
-  /// CMD 0xA1 — Full VMC reset.
+  /// CMD 0x20 — Query lift-platform floor heights.
   ///
-  /// Frame: FF | 00 | 55 | A1 | 01 | FF | CHK
+  /// Reference app: Config.serial_20_key = FF00552001FF.
+  static Uint8List buildQueryFloorHeightsFrame() =>
+      _buildFrame(_kCmdQueryFloorHeight, [0xFF]);
+
+  /// CMD 0x21 — Set one lift-platform floor height.
   ///
-  /// Returns the lift platform to its home (bottom) position and resets
-  /// internal state machines. Mirrors factory.apk's `onResetSend()`. Use
-  /// this when the lift has parked at an unexpected floor and won't move
-  /// during normal dispenses — typically after a calibration that didn't
-  /// complete its homing leg.
-  static Uint8List buildResetVmcFrame() =>
-      _buildFrame(_kCmdReset, [0xFF]);
+  /// Reference app: FF00552103 + <floor> + <height uint16>.
+  static Uint8List buildSetFloorHeightFrame(int floor, int height) {
+    if (floor < 1 || floor > 255) {
+      throw ArgumentError.value(floor, 'floor', 'Must be 1-255.');
+    }
+    if (height < 0 || height > 0xFFFF) {
+      throw ArgumentError.value(height, 'height', 'Must be 0-65535.');
+    }
+    return _buildFrame(_kCmdSetFloorHeight, [
+      floor & 0xFF,
+      (height >> 8) & 0xFF,
+      height & 0xFF,
+    ]);
+  }
+
+  /// CMD 0x03 — Request VMC log export.
+  ///
+  /// Reference app sends this at 9600, then reopens the same port at 115200
+  /// and reads UTF-8 log text until it contains "successfully".
+  static Uint8List buildVmcLogFrame() => _buildFrame(_kCmdVmcLog, [0xFF]);
 
   /// CMD 0x21 — Enable lift-platform auto-height-detection.
   ///
@@ -245,13 +279,13 @@ class VendingMachineService {
     void Function(DispenseStatus)? onProgress,
   }) {
     return _withDispenseGate(() => _dispenseProductImpl(
-          lineNumber:       lineNumber,
-          lotteryCode:      lotteryCode,
-          machineNo:        machineNo,
-          simulateSuccess:  simulateSuccess,
-          paymentMethod:    paymentMethod,
+          lineNumber: lineNumber,
+          lotteryCode: lotteryCode,
+          machineNo: machineNo,
+          simulateSuccess: simulateSuccess,
+          paymentMethod: paymentMethod,
           paymentReference: paymentReference,
-          onProgress:       onProgress,
+          onProgress: onProgress,
         ));
   }
 
@@ -340,9 +374,7 @@ class VendingMachineService {
         timeout: const Duration(milliseconds: 600),
       );
       return DispenseResult(
-        status: resp.isNotEmpty
-            ? DispenseStatus.success
-            : DispenseStatus.error,
+        status: resp.isNotEmpty ? DispenseStatus.success : DispenseStatus.error,
         errorMessage: resp.isEmpty ? 'no reply' : null,
       );
     } catch (e) {
@@ -494,8 +526,7 @@ class VendingMachineService {
         final echo = await TtySerial.read(
           timeout: const Duration(milliseconds: 800),
         );
-        LogFileUtil.i('lift.calibrate.echo',
-            {'bytes': echo.length.toString()});
+        LogFileUtil.i('lift.calibrate.echo', {'bytes': echo.length.toString()});
       } catch (_) {
         // Best-effort — calibration runs regardless of whether we
         // read the echo cleanly.
@@ -514,6 +545,154 @@ class VendingMachineService {
         status: DispenseStatus.error,
         errorMessage: e.toString(),
       );
+    }
+  }
+
+  static Future<FloorHeightsResult> queryFloorHeights() async {
+    if (kIsWeb) {
+      return const FloorHeightsResult(
+        success: false,
+        errorMessage: 'Floor-height query only works on the tablet.',
+      );
+    }
+
+    try {
+      await _openConfiguredTty(baud: 9600);
+      await TtySerial.write(buildClearFaultFrame());
+      await TtySerial.read(timeout: const Duration(milliseconds: 400));
+
+      final frame = buildQueryFloorHeightsFrame();
+      LogFileUtil.i('lift.height.query.send', {'frame': _hex(frame)});
+      await TtySerial.write(frame);
+
+      final response = await _readFrameForCommand(
+        _kCmdQueryFloorHeight,
+        timeout: const Duration(seconds: 3),
+      );
+      if (response == null) {
+        return const FloorHeightsResult(
+          success: false,
+          errorMessage: 'No CMD 0x20 response from VMC.',
+        );
+      }
+
+      final dataLen = response[4];
+      final data = response.sublist(5, 5 + dataLen);
+      final heights = <int>[];
+      for (var i = 0; i + 1 < data.length; i += 2) {
+        heights.add((data[i] << 8) | data[i + 1]);
+      }
+
+      return FloorHeightsResult(
+        success: true,
+        heights: heights,
+        rawHex: _hex(response),
+      );
+    } catch (e) {
+      return FloorHeightsResult(success: false, errorMessage: e.toString());
+    }
+  }
+
+  static Future<DispenseResult> setFloorHeight({
+    required int floor,
+    required int height,
+  }) async {
+    if (kIsWeb) {
+      return const DispenseResult(
+        status: DispenseStatus.error,
+        errorMessage: 'Floor-height setting only works on the tablet.',
+      );
+    }
+
+    try {
+      await _openConfiguredTty(baud: 9600);
+      final frame = buildSetFloorHeightFrame(floor, height);
+      LogFileUtil.i('lift.height.set.send', {
+        'floor': floor.toString(),
+        'height': height.toString(),
+        'frame': _hex(frame),
+      });
+      await TtySerial.write(frame);
+
+      final response = await _readFrameForCommand(
+        _kCmdSetFloorHeight,
+        timeout: const Duration(seconds: 2),
+      );
+      if (response == null) {
+        return const DispenseResult(
+          status: DispenseStatus.error,
+          errorMessage: 'No CMD 0x21 response from VMC.',
+        );
+      }
+
+      return const DispenseResult(status: DispenseStatus.success);
+    } catch (e) {
+      return DispenseResult(
+        status: DispenseStatus.error,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
+  static Future<VmcLogResult> fetchVmcLog({
+    Duration timeout = const Duration(seconds: 35),
+  }) async {
+    if (kIsWeb) {
+      return const VmcLogResult(
+        success: false,
+        errorMessage: 'VMC log export only works on the tablet.',
+      );
+    }
+
+    try {
+      await _openConfiguredTty(baud: 9600);
+      await TtySerial.write(buildClearFaultFrame());
+      await TtySerial.read(timeout: const Duration(milliseconds: 400));
+
+      final request = buildVmcLogFrame();
+      LogFileUtil.i('vmc.log.request.send', {'frame': _hex(request)});
+      await TtySerial.write(request);
+
+      await _readFrameForCommand(
+        _kCmdVmcLog,
+        timeout: const Duration(seconds: 2),
+      );
+
+      await _openConfiguredTty(baud: 115200);
+      final deadline = DateTime.now().add(timeout);
+      final buffer = StringBuffer();
+      while (DateTime.now().isBefore(deadline)) {
+        final chunk = await TtySerial.read(
+          timeout: const Duration(milliseconds: 500),
+        );
+        if (chunk.isEmpty) continue;
+        buffer.write(utf8.decode(chunk, allowMalformed: true));
+        if (buffer.toString().contains('successfully')) break;
+      }
+
+      final text = buffer.toString();
+      if (text.isEmpty) {
+        return const VmcLogResult(
+          success: false,
+          errorMessage: 'No VMC log bytes received at 115200 baud.',
+        );
+      }
+
+      LogFileUtil.i('vmc.log.received', {'chars': text.length.toString()});
+      return VmcLogResult(
+        success: text.contains('successfully'),
+        text: text,
+        errorMessage:
+            text.contains('successfully') ? null : 'Log transfer timed out.',
+      );
+    } catch (e) {
+      return VmcLogResult(success: false, errorMessage: e.toString());
+    } finally {
+      try {
+        await _openConfiguredTty(baud: 9600);
+      } catch (_) {
+        // Best-effort: restore normal command baud for the next admin action.
+      }
     }
   }
 
@@ -605,8 +784,8 @@ class VendingMachineService {
     void Function(DispenseStatus)? onProgress,
   }) async {
     final path = AppConfig.ttyPath;
-    LogFileUtil.i('tty.dispense.start',
-        {'slot': lineNumber.toString(), 'path': path});
+    LogFileUtil.i(
+        'tty.dispense.start', {'slot': lineNumber.toString(), 'path': path});
 
     // 1. Open. The outer dispenseProduct catches any throw here.
     try {
@@ -624,12 +803,8 @@ class VendingMachineService {
       );
     }
 
-    // 2. Clear latched board faults BEFORE every dispense.
-    //    Reyeah field support (EDY, commit 8b2e096) confirmed the VMC
-    //    holds a fault state internally after any failed vend, and the
-    //    next CMD 0x41 silently no-ops until CMD 0xA2 explicitly clears
-    //    it. Sending 0xA2 proactively before every 0x41 means a slot
-    //    that failed once isn't poisoned for the next customer.
+    // 2. Clear latched board faults before every delivery. If a previous
+    //    delivery failed, the board can hold an error state until CMD 0xA2.
     final clearFrame = buildClearFaultFrame();
     LogFileUtil.i('tty.write', {
       'cmd': '0xA2',
@@ -638,12 +813,10 @@ class VendingMachineService {
           .join(' '),
     });
     await TtySerial.write(clearFrame);
-    // Brief drain so the clear-fault echo doesn't show up as the
-    // 0x41 echo we read next.
     try {
-      await TtySerial.read(timeout: const Duration(milliseconds: 200));
+      await TtySerial.read(timeout: const Duration(milliseconds: 400));
     } catch (_) {
-      // Best-effort; the actual dispense fires regardless.
+      // A2 is a pre-flight cleanup; delivery should still be attempted.
     }
 
     // 3. Write the delivery frame.
@@ -656,7 +829,7 @@ class VendingMachineService {
     });
     await TtySerial.write(frame);
 
-    // 3. Drain the inbound queue (echo / status from the board).
+    // 4. Drain the inbound queue (echo / status from the board).
     //    Bytes come from the channel's in-process queue populated by
     //    the persistent ReadThread, not from a direct native read —
     //    so this can never race with close(). Best-effort: motor
@@ -669,16 +842,48 @@ class VendingMachineService {
       // A read failure here is fine; we already wrote the command.
     }
 
-    // 4. Wait out the motor turn. 5 s covers every coil/spring slot we
+    // 5. Wait out the motor turn. 5 s covers every coil/spring slot we
     //    have field data on.
     await Future.delayed(const Duration(seconds: 5));
     LogFileUtil.i('tty.dispense.complete', {'slot': lineNumber.toString()});
 
-    // 5. Intentionally NO close — singleton stays open for the next
+    // 6. Intentionally NO close — singleton stays open for the next
     //    dispense (factory pattern). Closing happens via explicit
     //    admin teardown / app shutdown / TTY path change.
     return true;
   }
+
+  static Future<void> _openConfiguredTty({required int baud}) async {
+    final opened = await TtySerial.open(AppConfig.ttyPath, baud: baud);
+    if (!opened) {
+      throw Exception(
+          'TtySerial.open(${AppConfig.ttyPath}, $baud) returned false.');
+    }
+  }
+
+  static Future<Uint8List?> _readFrameForCommand(
+    int command, {
+    required Duration timeout,
+  }) async {
+    final assembler = SerialFrameAssembler();
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final chunk = await TtySerial.read(
+        timeout: const Duration(milliseconds: 250),
+      );
+      if (chunk.isEmpty) continue;
+      for (final frame in assembler.feed(chunk)) {
+        if (frame.length >= 6 && frame[3] == command) {
+          return frame;
+        }
+      }
+    }
+    return null;
+  }
+
+  static String _hex(Iterable<int> bytes) => bytes
+      .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
+      .join(' ');
 
   // ── Reporte al backend Laravel ────────────────────────────────────────────
 
@@ -700,10 +905,10 @@ class VendingMachineService {
               'Content-Type': 'application/json',
             },
             body: jsonEncode({
-              'lottery_code':   lotteryCode,
-              'machine_no':     machineNo,
-              'line_number':    lineNumber,
-              'status':         success ? 'success' : 'failed',
+              'lottery_code': lotteryCode,
+              'machine_no': machineNo,
+              'line_number': lineNumber,
+              'status': success ? 'success' : 'failed',
               'payment_method': paymentMethod,
               if (paymentReference != null)
                 'payment_reference': paymentReference,
