@@ -5,6 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'screens/idle_screen.dart';
 import 'screens/setup_wizard_screen.dart';
 import 'services/app_config.dart';
+import 'services/lottery_stock_service.dart';
 import 'services/accessibility_settings.dart';
 import 'services/board_heartbeat.dart';
 import 'services/kiosk_lockdown.dart';
@@ -33,6 +34,7 @@ Future<void> main() async {
     }
   }
   await AppConfig.init();
+  await LotteryStockService.init();
 
   // First entry in the on-disk log — gives field-debug log files a
   // recognizable "process started" marker.
