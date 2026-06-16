@@ -42,6 +42,7 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
 
   _State _state = _State.idle;
   String _errorMsg = '';
+  bool _keypadVisible = false;
 
   /// Result of the on-init availability check.
   ///   null   → still checking, show a small spinner
@@ -66,6 +67,16 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
     if (mounted) setState(() => _availability = result);
   }
 
+  void _openKeypad() {
+    if (_state == _State.validating) return;
+    setState(() => _keypadVisible = true);
+  }
+
+  void _closeKeypad() {
+    if (!_keypadVisible) return;
+    setState(() => _keypadVisible = false);
+  }
+
   @override
   void dispose() {
     _codeCtrl.dispose();
@@ -84,6 +95,7 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
     }
 
     _focusNode.unfocus();
+    _closeKeypad();
     setState(() { _state = _State.validating; _errorMsg = ''; });
 
     try {
@@ -124,8 +136,11 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
   }
 
   void _showError(String msg) {
-    setState(() { _state = _State.error; _errorMsg = msg; });
-    _focusNode.requestFocus();
+    setState(() {
+      _state = _State.error;
+      _errorMsg = msg;
+      _keypadVisible = true;
+    });
   }
 
   @override
@@ -174,135 +189,180 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
             return Stack(
               fit: StackFit.expand,
               children: [
-                // Branding + QR — scrollable behind the floating keypad.
                 SingleChildScrollView(
                   controller: _scrollCtrl,
                   physics: const ClampingScrollPhysics(),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(minHeight: h),
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: w * 0.05,
-                        vertical: h * 0.02,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          ConstrainedBox(
-                            constraints:
-                                BoxConstraints(maxHeight: scale * 0.15),
-                            child: Image.asset(
-                              'assets/images/chevrolet_header_logo.png',
-                              fit: BoxFit.contain,
-                              errorBuilder: (_, __, ___) => _missing(
-                                  'chevrolet_header_logo.png', scale),
-                            ),
-                          ),
-                          SizedBox(height: scale * 0.03),
-                          Align(
-                            alignment: Alignment.center,
-                            child: IntrinsicWidth(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _InstructionLine(
-                                      num: '1.', verb: 'SCAN',
-                                      rest: ' the QR code below',
-                                      baseFont: scale * 0.05),
-                                  SizedBox(height: scale * 0.008),
-                                  _InstructionLine(
-                                      num: '2.', verb: 'REGISTER',
-                                      rest: ' with Chevy',
-                                      baseFont: scale * 0.05),
-                                  SizedBox(height: scale * 0.008),
-                                  _InstructionLine(
-                                      num: '3.', verb: 'ENTER',
-                                      rest: ' your unique code below',
-                                      baseFont: scale * 0.05),
-                                  SizedBox(height: scale * 0.008),
-                                  _InstructionLine(
-                                      num: '4.', verb: 'COLLECT',
-                                      rest: ' your item',
-                                      baseFont: scale * 0.05),
-                                  SizedBox(height: scale * 0.008),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.recycling_rounded,
-                                          color: Colors.white,
-                                          size: scale * 0.055),
-                                      SizedBox(width: scale * 0.02),
-                                      Text('Recycle the box',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: scale * 0.05,
-                                            fontWeight: FontWeight.w500,
-                                          )),
-                                    ],
-                                  ),
-                                ],
+                    child: IntrinsicHeight(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: w * 0.05,
+                          vertical: h * 0.02,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            ConstrainedBox(
+                              constraints:
+                                  BoxConstraints(maxHeight: scale * 0.15),
+                              child: Image.asset(
+                                'assets/images/chevrolet_header_logo.png',
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => _missing(
+                                    'chevrolet_header_logo.png', scale),
                               ),
                             ),
-                          ),
-                          SizedBox(height: scale * 0.04),
-                          SizedBox(
-                            width: double.infinity,
-                            height: scale * 0.38,
-                            child: OverflowBox(
-                              minWidth: 0,
-                              maxWidth: double.infinity,
+                            SizedBox(height: scale * 0.03),
+                            Align(
                               alignment: Alignment.center,
-                              child: Transform.translate(
-                                offset: Offset(scale * 0.22, 0),
-                                child: Image.asset(
-                                  'assets/images/tiger_paw_qr.png',
-                                  height: scale * 0.38,
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (_, __, ___) =>
-                                      _missing('tiger_paw_qr.png', scale),
+                              child: IntrinsicWidth(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _InstructionLine(
+                                        num: '1.', verb: 'SCAN',
+                                        rest: ' the QR code below',
+                                        baseFont: scale * 0.05),
+                                    SizedBox(height: scale * 0.008),
+                                    _InstructionLine(
+                                        num: '2.', verb: 'REGISTER',
+                                        rest: ' with Chevy',
+                                        baseFont: scale * 0.05),
+                                    SizedBox(height: scale * 0.008),
+                                    _InstructionLine(
+                                        num: '3.', verb: 'ENTER',
+                                        rest: ' your unique code below',
+                                        baseFont: scale * 0.05),
+                                    SizedBox(height: scale * 0.008),
+                                    _InstructionLine(
+                                        num: '4.', verb: 'COLLECT',
+                                        rest: ' your item',
+                                        baseFont: scale * 0.05),
+                                    SizedBox(height: scale * 0.008),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.recycling_rounded,
+                                            color: Colors.white,
+                                            size: scale * 0.055),
+                                        SizedBox(width: scale * 0.02),
+                                        Text('Recycle the box',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: scale * 0.05,
+                                              fontWeight: FontWeight.w500,
+                                            )),
+                                      ],
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
-                          ),
-                          Padding(
-                            padding: EdgeInsets.only(
-                                right: w * 0.04, top: scale * 0.005),
-                            child: Align(
-                              alignment: Alignment.centerRight,
+                            const Spacer(),
+                            SizedBox(
+                              width: double.infinity,
+                              height: scale * 0.42,
+                              child: OverflowBox(
+                                minWidth: 0,
+                                maxWidth: double.infinity,
+                                alignment: Alignment.center,
+                                child: Transform.translate(
+                                  offset: Offset(scale * 0.22, 0),
+                                  child: Image.asset(
+                                    'assets/images/tiger_paw_qr.png',
+                                    height: scale * 0.42,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) =>
+                                        _missing('tiger_paw_qr.png', scale),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Padding(
+                              padding: EdgeInsets.only(
+                                  right: w * 0.04, top: scale * 0.005),
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                child: Text(
+                                  '*Must be 18 or older to register',
+                                  style: TextStyle(
+                                    color: Colors.white60,
+                                    fontSize: scale * 0.028,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const Spacer(),
+                            Padding(
+                              padding:
+                                  EdgeInsets.only(bottom: scale * 0.02),
                               child: Text(
-                                '*Must be 18 or older to register',
+                                'ENTER YOUR UNIQUE\nREDEMPTION CODE HERE:',
+                                textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  color: Colors.white60,
-                                  fontSize: scale * 0.028,
-                                  fontStyle: FontStyle.italic,
+                                  color: Colors.white,
+                                  fontSize: scale * 0.07,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.1,
+                                  letterSpacing: 1.5,
                                 ),
                               ),
                             ),
-                          ),
-                          SizedBox(height: h * 0.42),
-                        ],
+                            _CodeInput(
+                              controller: _codeCtrl,
+                              focusNode: _focusNode,
+                              enabled: _state != _State.validating,
+                              scale: scale,
+                              onTap: _openKeypad,
+                            ),
+                            SizedBox(
+                              height: scale * 0.07,
+                              child: Center(
+                                child: _StatusLine(
+                                  state: _state,
+                                  msg: _errorMsg,
+                                  scale: scale,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
 
-                // Compact floating keypad — centered so customers don't
-                // have to bend down to the bottom of the kiosk screen.
-                Center(
-                  child: _FloatingCodeKeypad(
-                    width: math.min(w * 0.82, scale * 1.05),
-                    scale: scale * 0.68,
-                    codeCtrl: _codeCtrl,
-                    focusNode: _focusNode,
-                    state: _state,
-                    errorMsg: _errorMsg,
-                    canSubmit: _canSubmit,
-                    onChanged: () => setState(() {
-                      if (_state == _State.error) _state = _State.idle;
-                    }),
-                    onSubmit: _validate,
+                if (_keypadVisible)
+                  Positioned.fill(
+                    child: GestureDetector(
+                      onTap: _closeKeypad,
+                      behavior: HitTestBehavior.opaque,
+                      child: ColoredBox(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        child: Center(
+                          child: GestureDetector(
+                            onTap: () {},
+                            child: _KeypadPopup(
+                              width: math.min(w * 0.82, scale * 1.05),
+                              scale: scale * 0.68,
+                              codeCtrl: _codeCtrl,
+                              state: _state,
+                              canSubmit: _canSubmit,
+                              onChanged: () => setState(() {
+                                if (_state == _State.error) {
+                                  _state = _State.idle;
+                                }
+                              }),
+                              onSubmit: _validate,
+                              onClose: _closeKeypad,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
 
                 Positioned(
                   top: scale * 0.02,
@@ -339,28 +399,26 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Centered popup card with code field + compact on-screen keypad.
-class _FloatingCodeKeypad extends StatelessWidget {
+/// Compact centered popup — keyboard only; code field stays on main screen.
+class _KeypadPopup extends StatelessWidget {
   final double width;
   final double scale;
   final TextEditingController codeCtrl;
-  final FocusNode focusNode;
   final _State state;
-  final String errorMsg;
   final bool canSubmit;
   final VoidCallback onChanged;
   final VoidCallback onSubmit;
+  final VoidCallback onClose;
 
-  const _FloatingCodeKeypad({
+  const _KeypadPopup({
     required this.width,
     required this.scale,
     required this.codeCtrl,
-    required this.focusNode,
     required this.state,
-    required this.errorMsg,
     required this.canSubmit,
     required this.onChanged,
     required this.onSubmit,
+    required this.onClose,
   });
 
   @override
@@ -374,7 +432,7 @@ class _FloatingCodeKeypad extends StatelessWidget {
           vertical: scale * 0.035,
         ),
         decoration: BoxDecoration(
-          color: const Color(0xFF121212).withValues(alpha: 0.94),
+          color: const Color(0xFF121212).withValues(alpha: 0.96),
           borderRadius: BorderRadius.circular(scale * 0.025),
           border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
           boxShadow: [
@@ -388,32 +446,14 @@ class _FloatingCodeKeypad extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              'ENTER YOUR UNIQUE\nREDEMPTION CODE HERE:',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: scale * 0.075,
-                fontWeight: FontWeight.w900,
-                height: 1.1,
-                letterSpacing: 1.2,
-              ),
-            ),
-            SizedBox(height: scale * 0.025),
-            _CodeInput(
-              controller: codeCtrl,
-              focusNode: focusNode,
-              enabled: state != _State.validating,
-              scale: scale,
-            ),
-            SizedBox(
-              height: scale * 0.065,
-              child: Center(
-                child: _StatusLine(
-                  state: state,
-                  msg: errorMsg,
-                  scale: scale,
-                ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: IconButton(
+                onPressed: onClose,
+                icon: Icon(Icons.close_rounded,
+                    color: Colors.white70, size: scale * 0.08),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
               ),
             ),
             OnScreenKeypad(
@@ -468,17 +508,21 @@ class _CodeInput extends StatelessWidget {
   final FocusNode focusNode;
   final bool enabled;
   final double scale;
+  final VoidCallback onTap;
 
   const _CodeInput({
     required this.controller,
     required this.focusNode,
     required this.enabled,
     required this.scale,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
       height: scale * 0.12,
       decoration: BoxDecoration(
         color: Colors.white,
@@ -508,6 +552,7 @@ class _CodeInput extends StatelessWidget {
           contentPadding: EdgeInsets.zero,
         ),
       ),
+    ),
     );
   }
 }
