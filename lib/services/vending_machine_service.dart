@@ -155,6 +155,8 @@ class VendingMachineService {
   /// CMD 0xA2 — Limpiar fallo.
   static Uint8List buildClearFaultFrame() =>
       _buildFrame(_kCmdClearFault, [0xFF]);
+  // CMD 0xA1 — Full VMC reset (re-added so buildResetVmcFrame() resolves).
+static Uint8List buildResetVmcFrame() => _buildFrame(0xA1, [0xFF]);
 
   /// CMD 0x20 — Query lift-platform floor heights.
   ///
