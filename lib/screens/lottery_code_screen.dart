@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import '../models/machine_slot.dart';
 import '../services/api_service.dart';
+import '../services/lottery_availability_service.dart';
+import '../services/lottery_stock_service.dart';
+import '../widgets/lottery_stock_shell.dart';
 import '../widgets/onscreen_keypad.dart';
 import 'result_screen.dart';
 
@@ -39,6 +43,12 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
   _State _state = _State.idle;
   String _errorMsg = '';
 
+  /// Result of the on-init availability check.
+  ///   null   → still checking, show a small spinner
+  ///   .available == true   → render the normal keypad flow
+  ///   .available == false  → render the out-of-stock card instead, no keypad
+  LotteryAvailability? _availability;
+
   bool get _canSubmit =>
       _state != _State.validating && _codeCtrl.text.trim().length >= 4;
 
@@ -49,6 +59,15 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
     // layout to settle and then scroll the list to its bottom so the input
     // sits just above the keyboard instead of being trapped behind it.
     _focusNode.addListener(_onFocusChanged);
+    // Ask the backend whether any lottery-eligible slot has stock right
+    // now. If not, swap the UI to an out-of-stock card so the customer
+    // doesn't bother typing a code that would only return 503 NO_STOCK.
+    _checkAvailability();
+  }
+
+  Future<void> _checkAvailability() async {
+    final result = await LotteryAvailabilityService.check();
+    if (mounted) setState(() => _availability = result);
   }
 
   void _onFocusChanged() {
@@ -76,6 +95,11 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
     final code = _codeCtrl.text.trim().toUpperCase();
     if (code.isEmpty) return;
 
+    if (LotteryStockService.instance.isOutOfStock) {
+      _showError('Prizes are currently out of stock.');
+      return;
+    }
+
     _focusNode.unfocus();
     setState(() { _state = _State.validating; _errorMsg = ''; });
 
@@ -87,6 +111,8 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
         _showError('This code has already been redeemed.');
         return;
       }
+
+      await LotteryStockService.instance.decrement();
 
       Navigator.pushReplacement(
         context,
@@ -130,7 +156,8 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
       // enough to keep the input visible above the keyboard, and snap back
       // when the keyboard closes.
       resizeToAvoidBottomInset: true,
-      body: SafeArea(
+      body: LotteryStockShell(
+        child: SafeArea(
         child: LayoutBuilder(
           builder: (ctx, constraints) {
             final w = constraints.maxWidth;
@@ -141,6 +168,31 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
             // everything still fits. On the production 1:2 portrait
             // kiosk (h ≈ 2w) min(w, h/1.8) ≈ w, so sizes are unaffected.
             final scale = math.min(w, h / 1.8);
+
+            // ── Availability gate ────────────────────────────────────
+            // Loading: small spinner while the on-init check completes.
+            if (_availability == null) {
+              return Center(
+                child: SizedBox(
+                  width: scale * 0.08,
+                  height: scale * 0.08,
+                  child: const CircularProgressIndicator(
+                    color: Color(0xFF007ACC),
+                    strokeWidth: 3,
+                  ),
+                ),
+              );
+            }
+            // Unavailable: every lottery-eligible slot is out of stock.
+            // Skip the keypad UI entirely; show the out-of-stock card
+            // with a Back button that returns the customer to idle.
+            if (!_availability!.available) {
+              return _OutOfStockCard(
+                scale: scale,
+                onBack: () => Navigator.pop(context),
+              );
+            }
+            // ── Normal flow: the keypad + code entry layout ──────────
 
             return Stack(
               children: [
@@ -263,6 +315,26 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
                               ),
                             ),
 
+                            // Age disclaimer — right-aligned italic caption
+                            // immediately under the tiger paw QR, matching
+                            // the printed-card layout customers see on the
+                            // physical box.
+                            Padding(
+                              padding: EdgeInsets.only(
+                                  right: w * 0.04, top: scale * 0.005),
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                child: Text(
+                                  '*Must be 18 or older to register',
+                                  style: TextStyle(
+                                    color: Colors.white60,
+                                    fontSize: scale * 0.028,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ),
+                            ),
+
                             // Flexible space below the paw.
                             const Spacer(),
 
@@ -343,6 +415,7 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
               ],
             );
           },
+        ),
         ),
       ),
     );
@@ -533,6 +606,163 @@ class _BackButton extends StatelessWidget {
             size: size * 0.45,
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Out-of-stock card — "IT'S A HIT!"
+//
+// Rendered in place of the code-entry keypad when the backend reports zero
+// lottery-eligible slots in stock for this machine. Co-branded Chevrolet /
+// Detroit Tigers layout matching the printed customer materials.
+//
+// Stateful because we run a short idle timer — if the customer walks away
+// without tapping Back, we auto-pop back to the idle screen so the next
+// customer doesn't walk up to an "OUT OF STOCK" screen stuck on display.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _OutOfStockCard extends StatefulWidget {
+  final double scale;
+  final VoidCallback onBack;
+
+  const _OutOfStockCard({required this.scale, required this.onBack});
+
+  @override
+  State<_OutOfStockCard> createState() => _OutOfStockCardState();
+}
+
+class _OutOfStockCardState extends State<_OutOfStockCard> {
+  Timer? _idleTimer;
+
+  /// How long the out-of-stock card stays up before we auto-return to the
+  /// idle ads. Long enough for someone to read the message, short enough
+  /// that an unattended kiosk doesn't sit on this screen for hours.
+  static const _kIdleTimeout = Duration(seconds: 30);
+
+  @override
+  void initState() {
+    super.initState();
+    _resetIdleTimer();
+  }
+
+  @override
+  void dispose() {
+    _idleTimer?.cancel();
+    super.dispose();
+  }
+
+  void _resetIdleTimer() {
+    _idleTimer?.cancel();
+    _idleTimer = Timer(_kIdleTimeout, widget.onBack);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scale = widget.scale;
+
+    // Any touch on the card resets the idle timer — so a customer who's
+    // actively reading or tapping around stays on screen longer.
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => _resetIdleTimer(),
+      child: Stack(
+        children: [
+          // Centred branded message block.
+          Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: scale * 0.08),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Co-branded Chevrolet header. Falls back to the
+                  // dedicated co-branded asset if present, otherwise
+                  // composes the Chevrolet logo + a "Detroit Tigers"
+                  // partner caption so the message still looks intentional
+                  // before the operator drops the final art in.
+                  Image.asset(
+                    'assets/images/chevrolet_tigers_logo.png',
+                    height: scale * 0.18,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => Image.asset(
+                      'assets/images/chevrolet_header_logo.png',
+                      height: scale * 0.13,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Text(
+                        'CHEVROLET',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: scale * 0.07,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 3,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: scale * 0.012),
+                  Text(
+                    'Official Vehicle of the Detroit Tigers™',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: scale * 0.030,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+
+                  SizedBox(height: scale * 0.12),
+
+                  // Big "IT'S A HIT!" headline.
+                  Text(
+                    "IT'S A HIT!",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: scale * 0.14,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.5,
+                      height: 1.0,
+                    ),
+                  ),
+
+                  SizedBox(height: scale * 0.08),
+
+                  // Two-paragraph explanatory copy.
+                  Text(
+                    'Our prizes were so\npopular that we’ve run out.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: scale * 0.045,
+                      height: 1.4,
+                    ),
+                  ),
+                  SizedBox(height: scale * 0.04),
+                  Text(
+                    'Please check back the\nnext time you’re here\nfor a restock!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: scale * 0.045,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Back button — top-RIGHT corner on this screen (the lottery
+          // entry screen uses top-left). Per the design mockup. Tap goes
+          // straight back to the idle ads and cancels the auto-return
+          // timer in dispose.
+          Positioned(
+            top: scale * 0.02,
+            right: scale * 0.03,
+            child: _BackButton(scale: scale, onTap: widget.onBack),
+          ),
+        ],
       ),
     );
   }

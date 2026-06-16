@@ -7,6 +7,7 @@ import '../models/machine_slot.dart';
 import '../services/api_service.dart';
 import '../services/app_config.dart';
 import '../services/vending_machine_service.dart';
+import '../widgets/lottery_stock_shell.dart';
 
 /// Chevrolet / Detroit Tigers branded post-redemption screen.
 ///
@@ -157,7 +158,8 @@ class _ResultScreenState extends State<ResultScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: SafeArea(
+      body: LotteryStockShell(
+        child: SafeArea(
         child: Stack(
           children: [
             Positioned(
@@ -176,6 +178,7 @@ class _ResultScreenState extends State<ResultScreen> {
               child: _buildBody(w, h, scale),
             ),
           ],
+        ),
         ),
       ),
     );

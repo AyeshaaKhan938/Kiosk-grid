@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import '../models/advertisement.dart';
 import '../services/advertisement_service.dart';
 import '../services/app_config.dart';
+import '../services/lottery_stock_service.dart';
 import '../services/update_checker.dart';
 import '../services/update_service.dart';
+import '../widgets/lottery_stock_shell.dart';
 import 'admin_config_screen.dart';
 import 'lottery_code_screen.dart';
 
@@ -29,6 +31,7 @@ class _IdleScreenState extends State<IdleScreen>
   List<Advertisement> _backendAds = [];
   int   _adIndex = 0;
   Timer? _adTimer;
+  Timer? _adRefreshTimer;
   late PageController _pageCtrl;
 
   // ── Secret admin gesture (5 taps in the top-left corner within 2s) ────────
@@ -107,6 +110,16 @@ class _IdleScreenState extends State<IdleScreen>
     )..repeat();
 
     _loadAds();
+    // Re-poll the ads endpoint every 2 minutes with the in-memory cache
+    // bypassed, so an ad updated in vms-cloud admin shows up on the
+    // kiosk automatically within ~2 minutes — no reboot or admin tap.
+    // The disk-level CachedNetworkImage still applies per image URL, so
+    // operators should give new ads a unique filename if they replace
+    // an existing one in-place.
+    _adRefreshTimer = Timer.periodic(
+      const Duration(minutes: 2),
+      (_) => _loadAds(forceRefresh: true),
+    );
     _startDemoTimer();
     _slideTextCtrl.forward();
   }
@@ -114,6 +127,7 @@ class _IdleScreenState extends State<IdleScreen>
   @override
   void dispose() {
     _adTimer?.cancel();
+    _adRefreshTimer?.cancel();
     _pageCtrl.dispose();
     _pulseCtrl.dispose();
     _slideTextCtrl.dispose();
@@ -121,9 +135,10 @@ class _IdleScreenState extends State<IdleScreen>
     super.dispose();
   }
 
-  Future<void> _loadAds() async {
+  Future<void> _loadAds({bool forceRefresh = false}) async {
     try {
-      final ads = await AdvertisementService.fetchAds();
+      final ads =
+          await AdvertisementService.fetchAds(null, forceRefresh);
       if (mounted) {
         // Combine the two on-screen slots, but dedupe by ID so an ad
         // configured into BOTH screensaver and top doesn't appear twice
@@ -183,6 +198,7 @@ class _IdleScreenState extends State<IdleScreen>
 
   // ── Tap → LotteryCodeScreen (push, not replace — so back returns to ads) ──
   void _onTap() {
+    if (LotteryStockService.instance.isOutOfStock) return;
     Navigator.of(context).push(PageRouteBuilder(
       pageBuilder: (_, animation, __) => const LotteryCodeScreen(),
       transitionsBuilder: (_, animation, __, child) => FadeTransition(
@@ -202,7 +218,8 @@ class _IdleScreenState extends State<IdleScreen>
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: Semantics(
+      body: LotteryStockShell(
+        child: Semantics(
         label: 'VMFS USA vending machine kiosk. Touch anywhere to enter your lottery code.',
         button: true,
         child: Stack(
@@ -250,6 +267,7 @@ class _IdleScreenState extends State<IdleScreen>
             ),
           ],
         ),
+      ),
       ),
     );
   }

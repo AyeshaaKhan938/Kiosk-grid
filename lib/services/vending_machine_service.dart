@@ -140,7 +140,7 @@ class VendingMachineService {
 
   /// CMD 0x41 — Dispense [slot].
   ///
-  /// Frame: FF | 00 | 55 | 41 | 02 | slot | <second byte> | CHK
+  /// Frame: FF | 00 | 55 | 41 | 02 | slot | 0xFB | CHK
   ///
   /// The second byte is fixed to 0xFB (side-push). Do not use quantity 0x01
   /// here; this control board expects `<slot> FB` for delivery.
@@ -420,6 +420,62 @@ class VendingMachineService {
     }
   }
 
+  /// Send CMD 0xA1 (Reset VMC) through the dispense gate. Brings the
+  /// lift platform back to its home position and resets the VMC's
+  /// internal state. Used when the lift has gotten stuck at an
+  /// unexpected floor (e.g. parked at the top after a half-completed
+  /// calibration). The VMC takes a few seconds to physically run the
+  /// lift back down, so we hold the gate for ~10 s.
+  static Future<DispenseResult> resetVmcViaGate() async {
+    if (kIsWeb) {
+      return const DispenseResult(
+        status: DispenseStatus.error,
+        errorMessage: 'VMC reset only works on the tablet.',
+      );
+    }
+    return _withDispenseGate(_resetVmcImpl);
+  }
+
+  static Future<DispenseResult> _resetVmcImpl() async {
+    try {
+      final opened = await TtySerial.open(AppConfig.ttyPath, baud: 9600);
+      if (!opened) {
+        return const DispenseResult(
+          status: DispenseStatus.error,
+          errorMessage: 'TtySerial.open returned false',
+        );
+      }
+
+      final frame = buildResetVmcFrame();
+      LogFileUtil.i('vmc.reset.send', {
+        'frame': frame
+            .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
+            .join(' '),
+      });
+      await TtySerial.write(frame);
+
+      // Drain the echo (FF 00 AA A1 ...) — best-effort.
+      try {
+        final echo = await TtySerial.read(
+          timeout: const Duration(milliseconds: 600),
+        );
+        LogFileUtil.i('vmc.reset.echo', {'bytes': echo.length.toString()});
+      } catch (_) {}
+
+      // Hold the gate while the lift physically runs back to home.
+      // Field-observed travel time is ~6 s end-to-end; 10 s pad is safe.
+      await Future<void>.delayed(const Duration(seconds: 10));
+      LogFileUtil.i('vmc.reset.complete');
+
+      return const DispenseResult(status: DispenseStatus.success);
+    } catch (e) {
+      return DispenseResult(
+        status: DispenseStatus.error,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
   /// Run lift-platform auto-calibration through the same single-flight
   /// gate the dispense flow uses. Sends CMD 0x21 with Floor=0xFF, then
   /// holds the gate for ~45 s while the physical lift runs up and down
@@ -438,16 +494,27 @@ class VendingMachineService {
 
   static Future<DispenseResult> _calibrateLiftImpl() async {
     try {
-      final opened = await TtySerial.open(AppConfig.ttyPath, baud: 9600);
+      // CRITICAL: lift platform listens on a DIFFERENT UART than the
+      // main VMC. Factory.apk's PostUtil hard-codes
+      // `port_forlifter = "/dev/ttyS8"`. Sending CMD 0x21 to the main
+      // VMC port does nothing because the lift's microcontroller isn't
+      // wired to that bus. The kiosk picks ttyPathLift here (default
+      // /dev/ttyS8, overridable via admin) so the calibration command
+      // actually reaches the lift's MCU.
+      final liftPath = AppConfig.ttyPathLift;
+      LogFileUtil.i('lift.calibrate.open_port', {'path': liftPath});
+
+      final opened = await TtySerial.open(liftPath, baud: 9600);
       if (!opened) {
-        return const DispenseResult(
+        return DispenseResult(
           status: DispenseStatus.error,
-          errorMessage: 'TtySerial.open returned false',
+          errorMessage: 'TtySerial.open returned false on $liftPath',
         );
       }
 
       final frame = buildCalibrateLiftFrame();
       LogFileUtil.i('lift.calibrate.send', {
+        'path': liftPath,
         'frame': frame
             .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
             .join(' '),
