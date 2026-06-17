@@ -340,23 +340,30 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
                       onTap: _closeKeypad,
                       behavior: HitTestBehavior.opaque,
                       child: ColoredBox(
-                        color: Colors.black.withValues(alpha: 0.55),
+                        color: Colors.black.withValues(alpha: 0.6),
                         child: Center(
                           child: GestureDetector(
                             onTap: () {},
-                            child: _KeypadPopup(
-                              width: math.min(w * 0.82, scale * 1.05),
-                              scale: scale * 0.68,
-                              codeCtrl: _codeCtrl,
-                              state: _state,
-                              canSubmit: _canSubmit,
-                              onChanged: () => setState(() {
-                                if (_state == _State.error) {
-                                  _state = _State.idle;
-                                }
-                              }),
-                              onSubmit: _validate,
-                              onClose: _closeKeypad,
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: w * 0.06),
+                              child: KeypadPanel(
+                                width: math.min(w * 0.88, 520),
+                                scale: math.min(w, h / 1.6),
+                                controller: _codeCtrl,
+                                mode: KeypadMode.alphanumeric,
+                                maxLength: 20,
+                                enabled: _state != _State.validating,
+                                hint: 'Enter redemption code',
+                                submitLabel: 'ENTER',
+                                onChanged: () => setState(() {
+                                  if (_state == _State.error) {
+                                    _state = _State.idle;
+                                  }
+                                }),
+                                onSubmit:
+                                    _canSubmit ? _validate : null,
+                                onCancel: _closeKeypad,
+                              ),
                             ),
                           ),
                         ),
@@ -398,79 +405,6 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-
-/// Compact centered popup — keyboard only; code field stays on main screen.
-class _KeypadPopup extends StatelessWidget {
-  final double width;
-  final double scale;
-  final TextEditingController codeCtrl;
-  final _State state;
-  final bool canSubmit;
-  final VoidCallback onChanged;
-  final VoidCallback onSubmit;
-  final VoidCallback onClose;
-
-  const _KeypadPopup({
-    required this.width,
-    required this.scale,
-    required this.codeCtrl,
-    required this.state,
-    required this.canSubmit,
-    required this.onChanged,
-    required this.onSubmit,
-    required this.onClose,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        width: width,
-        padding: EdgeInsets.symmetric(
-          horizontal: scale * 0.04,
-          vertical: scale * 0.035,
-        ),
-        decoration: BoxDecoration(
-          color: const Color(0xFF121212).withValues(alpha: 0.96),
-          borderRadius: BorderRadius.circular(scale * 0.025),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.55),
-              blurRadius: scale * 0.06,
-              offset: Offset(0, scale * 0.02),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: IconButton(
-                onPressed: onClose,
-                icon: Icon(Icons.close_rounded,
-                    color: Colors.white70, size: scale * 0.08),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
-            ),
-            OnScreenKeypad(
-              controller: codeCtrl,
-              mode: KeypadMode.alphanumeric,
-              scale: scale,
-              enabled: state != _State.validating,
-              maxLength: 20,
-              onChanged: onChanged,
-              onSubmit: canSubmit ? onSubmit : null,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class _InstructionLine extends StatelessWidget {
   final String num;

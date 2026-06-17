@@ -303,6 +303,167 @@ class OnScreenKeypad extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Shared panel chrome — same look for admin bottom sheets and customer popups.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Wraps [OnScreenKeypad] in the standard VMFS dark-blue panel with optional
+/// preview field, drag handle, and cancel action.
+class KeypadPanel extends StatelessWidget {
+  final TextEditingController controller;
+  final KeypadMode mode;
+  final int? maxLength;
+  final bool enabled;
+  final String? title;
+  final String? hint;
+  final String submitLabel;
+  final VoidCallback? onSubmit;
+  final VoidCallback? onChanged;
+  final VoidCallback? onCancel;
+  final bool showPreview;
+  final bool obscurePreview;
+  final bool showDragHandle;
+  final BorderRadius borderRadius;
+  final double? width;
+  final double? scale;
+
+  const KeypadPanel({
+    super.key,
+    required this.controller,
+    this.mode = KeypadMode.alphanumeric,
+    this.maxLength,
+    this.enabled = true,
+    this.title,
+    this.hint,
+    this.submitLabel = 'ENTER',
+    this.onSubmit,
+    this.onChanged,
+    this.onCancel,
+    this.showPreview = true,
+    this.obscurePreview = false,
+    this.showDragHandle = false,
+    this.borderRadius = const BorderRadius.all(Radius.circular(20)),
+    this.width,
+    this.scale,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final keypadScale = scale ?? math.min(size.width, size.height / 1.6);
+
+    return Container(
+      width: width,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1A2B),
+        borderRadius: borderRadius,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (showDragHandle)
+            Center(
+              child: Container(
+                width: 44,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+          if (title != null) ...[
+            Text(
+              title!,
+              style: const TextStyle(
+                color: Color(0xFF007ACC),
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (showPreview) ...[
+            ListenableBuilder(
+              listenable: controller,
+              builder: (_, __) {
+                final raw = controller.text;
+                final display =
+                    obscurePreview ? '•' * raw.length : raw;
+                return Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF060E18),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          display.isEmpty ? (hint ?? '') : display,
+                          style: TextStyle(
+                            color: display.isEmpty
+                                ? Colors.white24
+                                : Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: mode == KeypadMode.alphanumeric
+                                ? null
+                                : 'monospace',
+                            letterSpacing: obscurePreview ? 6 : 1.2,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (maxLength != null)
+                        Text(
+                          '${controller.text.length}/$maxLength',
+                          style: const TextStyle(
+                            color: Colors.white38,
+                            fontSize: 11,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+          OnScreenKeypad(
+            controller: controller,
+            mode: mode,
+            maxLength: maxLength,
+            scale: keypadScale,
+            enabled: enabled,
+            submitLabel: submitLabel,
+            onChanged: onChanged,
+            onSubmit: onSubmit,
+          ),
+          if (onCancel != null)
+            Center(
+              child: TextButton(
+                onPressed: onCancel,
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Modal helper — opens an [OnScreenKeypad] inside a bottom sheet over a
 // staging controller, commits to the target controller on DONE.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -379,138 +540,22 @@ class _KeypadSheet extends StatefulWidget {
 
 class _KeypadSheetState extends State<_KeypadSheet> {
   @override
-  void initState() {
-    super.initState();
-    widget.staging.addListener(_onChanged);
-  }
-
-  @override
-  void dispose() {
-    widget.staging.removeListener(_onChanged);
-    super.dispose();
-  }
-
-  void _onChanged() {
-    if (mounted) setState(() {});
-  }
-
-  String _display() {
-    final raw = widget.staging.text;
-    if (widget.obscureText) return '•' * raw.length;
-    return raw;
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final scale = math.min(size.width, size.height / 1.6);
-
     return SafeArea(
       top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-        decoration: const BoxDecoration(
-          color: Color(0xFF0D1A2B),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Drag handle.
-            Center(
-              child: Container(
-                width: 44,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-
-            // Optional title.
-            if (widget.title != null) ...[
-              Text(
-                widget.title!,
-                style: const TextStyle(
-                  color: Color(0xFF007ACC),
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 2,
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
-
-            // Preview line — what the staging controller currently holds.
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF060E18),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _display().isEmpty
-                          ? (widget.hint ?? '')
-                          : _display(),
-                      style: TextStyle(
-                        color: _display().isEmpty
-                            ? Colors.white24
-                            : Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: widget.mode == KeypadMode.alphanumeric
-                            ? null
-                            : 'monospace',
-                        letterSpacing: widget.obscureText ? 6 : 1.2,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (widget.maxLength != null)
-                    Text(
-                      '${widget.staging.text.length}/${widget.maxLength}',
-                      style: const TextStyle(
-                        color: Colors.white38,
-                        fontSize: 11,
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // The keypad itself.
-            OnScreenKeypad(
-              controller: widget.staging,
-              mode: widget.mode,
-              maxLength: widget.maxLength,
-              scale: scale,
-              submitLabel: widget.submitLabel,
-              onSubmit: () =>
-                  Navigator.of(context).pop(widget.staging.text),
-            ),
-
-            // Cancel.
-            Center(
-              child: TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text(
-                  'Cancel',
-                  style: TextStyle(color: Colors.white54, fontSize: 13),
-                ),
-              ),
-            ),
-          ],
-        ),
+      child: KeypadPanel(
+        controller: widget.staging,
+        mode: widget.mode,
+        maxLength: widget.maxLength,
+        title: widget.title,
+        hint: widget.hint,
+        submitLabel: widget.submitLabel,
+        obscurePreview: widget.obscureText,
+        showDragHandle: true,
+        borderRadius:
+            const BorderRadius.vertical(top: Radius.circular(20)),
+        onSubmit: () => Navigator.of(context).pop(widget.staging.text),
+        onCancel: () => Navigator.of(context).pop(),
       ),
     );
   }
