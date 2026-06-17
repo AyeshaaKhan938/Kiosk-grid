@@ -473,6 +473,11 @@ class _CodeInput extends StatelessWidget {
         readOnly: true,
         showCursor: true,
         enableInteractiveSelection: false,
+        // The TextField's own tap recognizer wins the gesture arena over the
+        // wrapping GestureDetector, so the outer onTap never fired and the
+        // custom keypad never opened. Driving onTap from the field itself
+        // (which fires even when readOnly) guarantees the keypad pops up.
+        onTap: enabled ? onTap : null,
         style: TextStyle(
           color: Colors.black,
           fontSize: scale * 0.075,
