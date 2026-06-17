@@ -107,7 +107,7 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
         return;
       }
 
-      await LotteryStockService.instance.decrement();
+      await LotteryStockService.instance.refresh();
 
       Navigator.pushReplacement(
         context,

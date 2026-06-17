@@ -76,6 +76,27 @@ class AdminApiService {
           int slotId, Map<String, dynamic> fields) =>
       _patch('slots/$slotId', fields);
 
+  /// Set every slot's [current_stock] to its [max_stock] in vms-cloud.
+  static Future<int> restockAllSlots() async {
+    final data = await getAdminSlots();
+    final slots = (data['slots'] as List? ?? []).cast<Map<String, dynamic>>();
+    var updated = 0;
+
+    for (final slot in slots) {
+      final id = slot['id'] as int?;
+      final max = slot['max_stock'] as int? ?? 0;
+      if (id == null || max <= 0) continue;
+
+      final current = slot['current_stock'] as int? ?? 0;
+      if (current >= max) continue;
+
+      await updateSlot(id, {'current_stock': max});
+      updated++;
+    }
+
+    return updated;
+  }
+
   // ── Órdenes ───────────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> getOrders({

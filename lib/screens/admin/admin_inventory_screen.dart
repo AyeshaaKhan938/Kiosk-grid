@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/admin_api_service.dart';
+import '../../services/lottery_stock_service.dart';
 import '../../widgets/onscreen_keypad.dart';
 
 /// Laravel devuelve price como String ("2.50") o num. Parseamos ambos.
@@ -20,6 +21,7 @@ class AdminInventoryScreen extends StatefulWidget {
 class _AdminInventoryScreenState extends State<AdminInventoryScreen> {
   List<Map<String, dynamic>> _slots = [];
   bool   _loading = true;
+  bool   _restocking = false;
   String? _error;
 
   @override
@@ -39,6 +41,54 @@ class _AdminInventoryScreenState extends State<AdminInventoryScreen> {
     }
   }
 
+  Future<void> _restockAll() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restock all slots?'),
+        content: const Text(
+          'This sets every slot\'s current stock to its max capacity in '
+          'vms-cloud. Use after refilling the machine.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Restock all'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _restocking = true);
+    try {
+      final updated = await AdminApiService.restockAllSlots();
+      await LotteryStockService.instance.refresh();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            updated > 0
+                ? 'Restocked $updated slot${updated == 1 ? '' : 's'} in vms-cloud.'
+                : 'All slots were already at full stock.',
+          ),
+        ),
+      );
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Restock failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _restocking = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -51,9 +101,30 @@ class _AdminInventoryScreenState extends State<AdminInventoryScreen> {
       color: cs.primary,
       child: ListView.separated(
         padding: const EdgeInsets.all(16),
-        itemCount: _slots.length,
+        itemCount: _slots.length + 1,
         separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (ctx, i) => _SlotCard(slot: _slots[i], onUpdated: _load),
+        itemBuilder: (ctx, i) {
+          if (i == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: FilledButton.icon(
+                onPressed: _restocking ? null : _restockAll,
+                icon: _restocking
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: cs.onPrimary,
+                        ),
+                      )
+                    : const Icon(Icons.inventory_rounded),
+                label: Text(_restocking ? 'Restocking…' : 'Restock all'),
+              ),
+            );
+          }
+          return _SlotCard(slot: _slots[i - 1], onUpdated: _load);
+        },
       ),
     );
   }

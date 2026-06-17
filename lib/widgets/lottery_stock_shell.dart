@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import '../screens/admin_config_screen.dart';
+
 import '../screens/lottery_out_of_stock_screen.dart';
 import '../services/lottery_stock_service.dart';
 
-/// Wraps lottery customer screens with live stock badge, restock control,
-/// and automatic out-of-stock overlay.
+/// Wraps lottery customer screens with live cloud stock badge and
+/// automatic out-of-stock overlay when vms-cloud reports no prizes.
 class LotteryStockShell extends StatefulWidget {
   final Widget child;
   const LotteryStockShell({super.key, required this.child});
@@ -20,6 +20,7 @@ class _LotteryStockShellState extends State<LotteryStockShell> {
   void initState() {
     super.initState();
     _stock.addListener(_onStockChanged);
+    _stock.refresh();
   }
 
   @override
@@ -30,15 +31,6 @@ class _LotteryStockShellState extends State<LotteryStockShell> {
 
   void _onStockChanged() {
     if (mounted) setState(() {});
-  }
-
-  Future<void> _onRestock() async {
-    final ok = await verifyAdminPin(context);
-    if (!ok || !mounted) return;
-    // Wait for dialog route to finish closing before rebuilding overlay.
-    await Future<void>.delayed(Duration.zero);
-    if (!mounted) return;
-    await _stock.restock();
   }
 
   @override
@@ -53,11 +45,6 @@ class _LotteryStockShellState extends State<LotteryStockShell> {
           top: MediaQuery.paddingOf(context).top + 10,
           right: 14,
           child: _StockBadge(label: _stock.stockLabel),
-        ),
-        Positioned(
-          bottom: MediaQuery.paddingOf(context).bottom + 14,
-          left: 14,
-          child: _RestockButton(onPressed: _onRestock),
         ),
       ],
     );
@@ -84,46 +71,6 @@ class _StockBadge extends StatelessWidget {
           fontSize: 15,
           fontWeight: FontWeight.w800,
           letterSpacing: 0.5,
-        ),
-      ),
-    );
-  }
-}
-
-class _RestockButton extends StatelessWidget {
-  final VoidCallback onPressed;
-  const _RestockButton({required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.inventory_rounded, color: Colors.white70, size: 18),
-              SizedBox(width: 8),
-              Text(
-                'Restock',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );
