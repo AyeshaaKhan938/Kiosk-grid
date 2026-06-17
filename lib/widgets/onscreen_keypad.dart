@@ -278,13 +278,24 @@ class OnScreenKeypad extends StatelessWidget {
                 flex: 3,
                 bg: const Color(0xFFD32F2F),
                 onTap: onSubmit,
-                child: Text(
-                  submitLabel,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: font * 0.85,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 2,
+                // FittedBox + single line: the label scales down to fit the
+                // key width instead of wrapping to "ENTE"/"R" on narrower
+                // panels. Horizontal padding keeps it off the rounded edges.
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: font * 0.3),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      submitLabel,
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: font * 0.7,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
                   ),
                 ),
               )
