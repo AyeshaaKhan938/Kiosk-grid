@@ -1,65 +1,57 @@
-import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 
-/// Tracks lottery prize inventory on the kiosk (software-side counter).
+import 'package:flutter/foundation.dart';
+
+import 'lottery_availability_service.dart';
+
+/// Live lottery prize stock from vms-cloud (not a local counter).
+///
+/// Polls [LotteryAvailabilityService] so customer screens stay in sync with
+/// backend inventory. Restocking happens in Admin → Inventory.
 class LotteryStockService extends ChangeNotifier {
   LotteryStockService._();
   static final LotteryStockService instance = LotteryStockService._();
 
-  static const _kCurrent = 'lottery_stock_current';
-  static const _kFull    = 'lottery_stock_full';
+  Timer? _pollTimer;
+  bool _loadedFromCloud = false;
+  bool _available = true;
+  int _inStock = 0;
+  int _totalCapacity = 0;
 
-  static const int _defaultFull = 50;
+  bool get isOutOfStock =>
+      _loadedFromCloud && (!_available || _inStock <= 0);
 
-  SharedPreferences? _prefs;
-  int _current = _defaultFull;
-  int _full    = _defaultFull;
-
-  int get currentStock => _current;
-  int get fullStock    => _full;
-  bool get isOutOfStock => _current <= 0;
-  String get stockLabel => '$_current/$_full';
+  /// e.g. "12/50" when the API reports capacity; otherwise "12".
+  String get stockLabel {
+    if (!_loadedFromCloud) return '—';
+    if (_totalCapacity > 0) return '$_inStock/$_totalCapacity';
+    return '$_inStock';
+  }
 
   static Future<void> init() async {
-    final svc = instance;
-    svc._prefs = await SharedPreferences.getInstance();
-
-    final envFull = int.tryParse(dotenv.env['LOTTERY_FULL_STOCK'] ?? '');
-    svc._full = svc._prefs!.getInt(_kFull) ??
-        envFull ??
-        _defaultFull;
-
-    final envCurrent = int.tryParse(dotenv.env['LOTTERY_CURRENT_STOCK'] ?? '');
-    svc._current = svc._prefs!.getInt(_kCurrent) ??
-        envCurrent ??
-        svc._full;
-
-    svc._current = svc._current.clamp(0, svc._full);
+    await instance.refresh();
+    instance._pollTimer?.cancel();
+    instance._pollTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => instance.refresh(),
+    );
   }
 
-  /// Award one prize (after successful redemption).
-  Future<void> decrement() async {
-    if (_current <= 0) return;
-    _current--;
-    await _prefs?.setInt(_kCurrent, _current);
+  /// Pull latest lottery stock from vms-cloud.
+  Future<void> refresh() async {
+    final snapshot = await LotteryAvailabilityService.check();
+    if (snapshot.isFailOpen) return;
+
+    _loadedFromCloud = true;
+    _available = snapshot.available;
+    _inStock = snapshot.inStockCount;
+    _totalCapacity = snapshot.totalCapacity;
     notifyListeners();
   }
 
-  /// Admin restock — reset to full capacity.
-  Future<void> restock() async {
-    _current = _full;
-    await _prefs?.setInt(_kCurrent, _current);
-    notifyListeners();
-  }
-
-  /// Set full capacity (admin / setup).
-  Future<void> setFullStock(int value) async {
-    if (value < 1) return;
-    _full = value;
-    if (_current > _full) _current = _full;
-    await _prefs?.setInt(_kFull, _full);
-    await _prefs?.setInt(_kCurrent, _current);
-    notifyListeners();
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
   }
 }

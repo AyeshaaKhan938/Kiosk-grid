@@ -10,27 +10,29 @@ import 'app_config.dart';
 class LotteryAvailability {
   final bool available;
   final int inStockCount;
+  final int totalCapacity;
+  final bool isFailOpen;
 
   const LotteryAvailability({
     required this.available,
     required this.inStockCount,
+    this.totalCapacity = 0,
+    this.isFailOpen = false,
   });
 
-  /// "Fail-open" default — if the backend is unreachable or returns an
-  /// unexpected response, we report the lottery as available rather than
-  /// silently locking the kiosk into out-of-stock mode. A real submission
-  /// will still get the proper 503 NO_STOCK error from the backend if
-  /// there's actually no stock.
+  /// If the backend is unreachable, do not overwrite the last known stock.
   const LotteryAvailability.failOpen()
       : available = true,
-        inStockCount = 0;
+        inStockCount = 0,
+        totalCapacity = 0,
+        isFailOpen = true;
 }
 
 /// Lightweight check the lottery-code screen runs on init to decide
 /// whether to show the code-entry keypad or an "out of stock" card.
 ///
 /// Endpoint: GET /api/v1/machines/{machineNo}/lottery-availability
-/// Response: { "available": bool, "in_stock_count": int }
+/// Response: { "available": bool, "in_stock_count": int, "total_capacity"?: int }
 class LotteryAvailabilityService {
   LotteryAvailabilityService._();
 
@@ -45,9 +47,14 @@ class LotteryAvailabilityService {
 
       if (r.statusCode == 200) {
         final body = jsonDecode(r.body) as Map<String, dynamic>;
+        final total = (body['total_capacity'] as num?)?.toInt() ??
+            (body['max_in_stock_count'] as num?)?.toInt() ??
+            (body['total_in_stock_capacity'] as num?)?.toInt() ??
+            0;
         return LotteryAvailability(
           available: body['available'] == true,
           inStockCount: (body['in_stock_count'] as num?)?.toInt() ?? 0,
+          totalCapacity: total,
         );
       }
 
