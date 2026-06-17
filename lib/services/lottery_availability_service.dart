@@ -94,8 +94,13 @@ class LotteryAvailabilityService {
   /// Derive availability from the live slot inventory:
   ///   GET /api/v1/machines/{machineNo}/slots
   ///
-  /// in_stock_count = Σ current_stock over slots that are enabled and not
-  /// faulted; total_capacity = Σ max_stock over those same slots.
+  /// total_capacity = Σ max_stock over ALL slots — this is a fixed property of
+  /// the machine (e.g. 36 slots × 4 max = 144) and must NOT depend on current
+  /// stock. The backend flips a slot's `is_available` to false the moment it
+  /// sells out, so filtering by availability here would shrink the denominator
+  /// as prizes deplete (144 → 72 → …). We deliberately count every slot.
+  ///
+  /// in_stock_count = Σ current_stock over ALL slots.
   static Future<LotteryAvailability> _checkFromSlots() async {
     final url = Uri.parse(
       '${AppConfig.apiBaseUrl}/machines/${AppConfig.machineNo}/slots',
@@ -112,9 +117,6 @@ class LotteryAvailabilityService {
         int inStock = 0;
         int capacity = 0;
         for (final s in slots.cast<Map<String, dynamic>>()) {
-          final available = s['is_available'] as bool? ?? false;
-          final fault = s['is_fault'] as bool? ?? false;
-          if (!available || fault) continue;
           inStock += (s['current_stock'] as num?)?.toInt() ?? 0;
           capacity += (s['max_stock'] as num?)?.toInt() ?? 0;
         }
