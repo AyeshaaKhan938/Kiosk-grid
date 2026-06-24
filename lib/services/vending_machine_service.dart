@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'admin_api_service.dart';
 import 'app_config.dart';
 import 'dispense_wake_lock.dart';
 import 'log_file_util.dart';
@@ -735,6 +736,13 @@ static Uint8List buildResetVmcFrame() => _buildFrame(0xA1, [0xFF]);
         lineNumber: lineNumber,
         onProgress: null,
       );
+      if (ok) {
+        // A verified vend should leave inventory consistent, just like a
+        // real sale. Decrement the slot's stock in vms-cloud. This is
+        // best-effort: a backend hiccup must not turn a successful physical
+        // dispense into a reported failure.
+        await _decrementStockBestEffort(lineNumber);
+      }
       return DispenseResult(
         status: ok ? DispenseStatus.success : DispenseStatus.error,
         errorMessage: ok ? null : 'VMC did not confirm delivery.',
@@ -751,6 +759,29 @@ static Uint8List buildResetVmcFrame() => _buildFrame(0xA1, [0xFF]);
         status: DispenseStatus.error,
         errorMessage: e.toString(),
       );
+    }
+  }
+
+  /// Reduce the slot's stock by one in vms-cloud after a successful test
+  /// dispense. Never throws — inventory bookkeeping must not mask a vend that
+  /// physically succeeded.
+  static Future<void> _decrementStockBestEffort(int lineNumber) async {
+    if (!AdminApiService.hasToken) {
+      LogFileUtil.i('test_dispense.stock.skip', {
+        'slot': lineNumber.toString(),
+        'reason': 'no_management_token',
+      });
+      return;
+    }
+    try {
+      final newStock = await AdminApiService.decrementSlotStock(lineNumber);
+      LogFileUtil.i('test_dispense.stock.decremented', {
+        'slot': lineNumber.toString(),
+        'new_stock': newStock?.toString() ?? 'slot_not_found',
+      });
+    } catch (e) {
+      LogFileUtil.e('test_dispense.stock.failed',
+          extra: {'slot': lineNumber.toString()}, error: e.toString());
     }
   }
 
