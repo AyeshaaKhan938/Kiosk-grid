@@ -76,6 +76,37 @@ class AdminApiService {
           int slotId, Map<String, dynamic> fields) =>
       _patch('slots/$slotId', fields);
 
+  /// Decrement one unit of stock for the slot at [lineNumber] in vms-cloud,
+  /// mirroring what a real sale does. Used by Test Dispense so that a verified
+  /// vend is also reflected in inventory.
+  ///
+  /// Returns the slot's new stock value, or `null` if no slot matched
+  /// [lineNumber]. Returns `0` (without a write) when the slot was already
+  /// empty, so the caller can surface "no stock to decrement".
+  static Future<int?> decrementSlotStock(int lineNumber) async {
+    final data = await getAdminSlots();
+    final slots = (data['slots'] as List? ?? []).cast<Map<String, dynamic>>();
+
+    Map<String, dynamic>? slot;
+    for (final s in slots) {
+      if ((s['line_number'] as num?)?.toInt() == lineNumber) {
+        slot = s;
+        break;
+      }
+    }
+    if (slot == null) return null;
+
+    final id = slot['id'] as int?;
+    if (id == null) return null;
+
+    final current = (slot['current_stock'] as num?)?.toInt() ?? 0;
+    if (current <= 0) return 0;
+
+    final newStock = current - 1;
+    await updateSlot(id, {'current_stock': newStock});
+    return newStock;
+  }
+
   /// Set every slot's [current_stock] to its [max_stock] in vms-cloud.
   static Future<int> restockAllSlots() async {
     final data = await getAdminSlots();
