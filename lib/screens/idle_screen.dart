@@ -4,19 +4,19 @@ import 'package:flutter/material.dart';
 import '../models/advertisement.dart';
 import '../services/advertisement_service.dart';
 import '../services/app_config.dart';
-import '../services/lottery_stock_service.dart';
 import '../services/update_checker.dart';
 import '../services/update_service.dart';
 import '../widgets/lottery_stock_shell.dart';
 import 'admin_config_screen.dart';
-import 'lottery_code_screen.dart';
+import 'age_verification_screen.dart';
+import 'product_browser_screen.dart';
 
 /// Pantalla idle/screensaver del kiosk.
 ///
 /// Estado de reposo: anuncios a pantalla completa con auto-rotación.
-/// Tap en cualquier lugar → abre [LotteryCodeScreen] para que el cliente
-/// ingrese el código del cupón directamente. No hay catálogo de productos
-/// intermedio — el flujo es: ads → código → resultado.
+/// Tap en cualquier lugar → abre [ProductBrowserScreen] para que el cliente
+/// navegue el catálogo de productos. Si age verification está activo, pasa
+/// primero por [AgeVerificationScreen].
 class IdleScreen extends StatefulWidget {
   const IdleScreen({super.key});
 
@@ -196,11 +196,13 @@ class _IdleScreenState extends State<IdleScreen>
     }
   }
 
-  // ── Tap → LotteryCodeScreen (push, not replace — so back returns to ads) ──
+  // ── Tap → Product browser (age verification gate if enabled) ─────────────
   void _onTap() {
-    if (LotteryStockService.instance.isOutOfStock) return;
+    final next = AppConfig.ageVerificationEnabled
+        ? const AgeVerificationScreen()
+        : const ProductBrowserScreen();
     Navigator.of(context).push(PageRouteBuilder(
-      pageBuilder: (_, animation, __) => const LotteryCodeScreen(),
+      pageBuilder: (_, animation, __) => next,
       transitionsBuilder: (_, animation, __, child) => FadeTransition(
         opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
         child: child,
@@ -220,7 +222,7 @@ class _IdleScreenState extends State<IdleScreen>
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: LotteryStockShell(
         child: Semantics(
-        label: 'VMFS USA vending machine kiosk. Touch anywhere to enter your lottery code.',
+        label: 'VMFS USA vending machine kiosk. Touch anywhere to browse products.',
         button: true,
         child: Stack(
           fit: StackFit.expand,

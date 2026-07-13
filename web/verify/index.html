@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#000000">
+  <title>VMFS — Age Verification</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #000;
+      color: #fff;
+      min-height: 100dvh;
+      padding: 24px 20px 40px;
+    }
+    .logo {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .logo h1 {
+      font-size: 1.1rem;
+      font-weight: 800;
+      letter-spacing: 2px;
+      color: #007ACC;
+    }
+    .logo p {
+      font-size: 0.85rem;
+      color: #aaa;
+      margin-top: 6px;
+    }
+    h2 {
+      font-size: 1.4rem;
+      font-weight: 800;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      text-align: center;
+      color: #bbb;
+      font-size: 0.9rem;
+      margin-bottom: 28px;
+      line-height: 1.4;
+    }
+    .card {
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #ccc;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    select {
+      width: 100%;
+      padding: 14px;
+      border-radius: 10px;
+      border: 1px solid #444;
+      background: #1a1a1a;
+      color: #fff;
+      font-size: 1rem;
+      margin-bottom: 16px;
+    }
+    .upload-zone {
+      border: 2px dashed #444;
+      border-radius: 12px;
+      padding: 32px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: #007ACC;
+    }
+    .upload-zone svg {
+      width: 48px;
+      height: 48px;
+      color: #007ACC;
+      margin-bottom: 12px;
+    }
+    .upload-zone p {
+      color: #aaa;
+      font-size: 0.9rem;
+    }
+    .preview {
+      margin-top: 12px;
+      border-radius: 10px;
+      overflow: hidden;
+      display: none;
+    }
+    .preview img {
+      width: 100%;
+      max-height: 200px;
+      object-fit: contain;
+      background: #222;
+    }
+    .preview.visible { display: block; }
+    input[type="file"] { display: none; }
+    button[type="submit"] {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 12px;
+      background: #007ACC;
+      color: #fff;
+      font-size: 1.05rem;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    button[type="submit"]:disabled {
+      background: #333;
+      color: #666;
+      cursor: not-allowed;
+    }
+    .status {
+      text-align: center;
+      padding: 20px;
+      border-radius: 12px;
+      margin-top: 16px;
+      display: none;
+    }
+    .status.visible { display: block; }
+    .status.success { background: #0a2e1a; border: 1px solid #2e7d32; }
+    .status.error { background: #2e0a0a; border: 1px solid #c62828; }
+    .status.processing { background: #0a1a2e; border: 1px solid #007ACC; }
+    .status h3 { font-size: 1.1rem; margin-bottom: 8px; }
+    .status p { color: #ccc; font-size: 0.9rem; line-height: 1.4; }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid #333;
+      border-top-color: #007ACC;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .privacy {
+      font-size: 0.75rem;
+      color: #666;
+      text-align: center;
+      margin-top: 24px;
+      line-height: 1.5;
+    }
+    #error-page { display: none; text-align: center; padding-top: 60px; }
+    #error-page.visible { display: block; }
+    #form-page.hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div id="error-page">
+    <h2>Invalid Link</h2>
+    <p class="subtitle" style="margin-top:16px">Please scan the QR code on the kiosk again.</p>
+  </div>
+
+  <div id="form-page">
+    <div class="logo">
+      <h1>VMFS USA</h1>
+      <p>Age Verification</p>
+    </div>
+
+    <h2>Verify Your Age</h2>
+    <p class="subtitle">Upload a clear photo of your government-issued ID or passport. You must be 18 or older.</p>
+
+    <form id="verify-form">
+      <div class="card">
+        <label for="doc-type">Document Type</label>
+        <select id="doc-type" name="document_type" required>
+          <option value="drivers_license">Driver's License</option>
+          <option value="id_card">State ID Card</option>
+          <option value="passport">Passport</option>
+        </select>
+
+        <label>Document Photo</label>
+        <div class="upload-zone" id="upload-zone">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <p>Tap to take a photo or choose from gallery</p>
+        </div>
+        <input type="file" id="file-input" accept="image/*" capture="environment">
+        <div class="preview" id="preview">
+          <img id="preview-img" alt="ID preview">
+        </div>
+      </div>
+
+      <button type="submit" id="submit-btn" disabled>Submit for Verification</button>
+    </form>
+
+    <div class="status" id="status-box">
+      <div class="spinner" id="status-spinner"></div>
+      <h3 id="status-title"></h3>
+      <p id="status-msg"></p>
+    </div>
+
+    <p class="privacy">
+      Your ID is sent securely to our verification partner for age confirmation only.
+      Images are not stored after verification is complete.
+    </p>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get('session');
+
+    const formPage = document.getElementById('form-page');
+    const errorPage = document.getElementById('error-page');
+    const form = document.getElementById('verify-form');
+    const fileInput = document.getElementById('file-input');
+    const uploadZone = document.getElementById('upload-zone');
+    const preview = document.getElementById('preview');
+    const previewImg = document.getElementById('preview-img');
+    const submitBtn = document.getElementById('submit-btn');
+    const statusBox = document.getElementById('status-box');
+    const statusTitle = document.getElementById('status-title');
+    const statusMsg = document.getElementById('status-msg');
+    const statusSpinner = document.getElementById('status-spinner');
+
+    let selectedFile = null;
+
+    // API base: same origin, /api/v1 path.
+    const API_BASE = window.location.origin + '/api/v1';
+
+    if (!sessionId) {
+      formPage.classList.add('hidden');
+      errorPage.classList.add('visible');
+    }
+
+    uploadZone.addEventListener('click', () => fileInput.click());
+
+    uploadZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadZone.classList.add('dragover');
+    });
+    uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+    uploadZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) handleFile(fileInput.files[0]);
+    });
+
+    function handleFile(file) {
+      if (!file.type.startsWith('image/')) {
+        alert('Please select an image file.');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        alert('Image must be under 10 MB.');
+        return;
+      }
+      selectedFile = file;
+      previewImg.src = URL.createObjectURL(file);
+      preview.classList.add('visible');
+      submitBtn.disabled = false;
+    }
+
+    function showStatus(type, title, msg, showSpinner) {
+      statusBox.className = 'status visible ' + type;
+      statusTitle.textContent = title;
+      statusMsg.textContent = msg;
+      statusSpinner.style.display = showSpinner ? 'block' : 'none';
+    }
+
+    async function pollStatus() {
+      const res = await fetch(`${API_BASE}/age-verification/sessions/${sessionId}`, {
+        headers: { 'Accept': 'application/json' },
+      });
+      if (!res.ok) return null;
+      return res.json();
+    }
+
+    async function waitForResult() {
+      for (let i = 0; i < 60; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const data = await pollStatus();
+        if (!data) continue;
+
+        if (data.status === 'verified' && data.age_verified) {
+          showStatus('success', 'Verified!', 'Return to the kiosk to enter your code.', false);
+          form.style.display = 'none';
+          return;
+        }
+        if (data.status === 'rejected') {
+          showStatus('error', 'Not Verified', data.message || 'You must be 18 or older.', false);
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Try Again';
+          return;
+        }
+      }
+      showStatus('error', 'Timeout', 'Verification is taking too long. Please try again.', false);
+      submitBtn.disabled = false;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!selectedFile) return;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Uploading…';
+      showStatus('processing', 'Uploading…', 'Please wait while we verify your ID.', true);
+
+      const formData = new FormData();
+      formData.append('document', selectedFile);
+      formData.append('document_type', document.getElementById('doc-type').value);
+
+      try {
+        const res = await fetch(
+          `${API_BASE}/age-verification/sessions/${sessionId}/document`,
+          { method: 'POST', body: formData },
+        );
+
+        if (res.status === 404 || res.status === 501) {
+          showStatus('error', 'Not Available', 'Age verification is not enabled on this server yet.', false);
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Submit for Verification';
+          return;
+        }
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || `Upload failed (${res.status})`);
+        }
+
+        showStatus('processing', 'Verifying…', 'This usually takes less than a minute. Keep this page open.', true);
+        await waitForResult();
+      } catch (err) {
+        showStatus('error', 'Upload Failed', err.message || 'Please check your connection and try again.', false);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit for Verification';
+      }
+    });
+  </script>
+</body>
+</html>

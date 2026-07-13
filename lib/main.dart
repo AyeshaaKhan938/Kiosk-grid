@@ -12,6 +12,7 @@ import 'services/kiosk_lockdown.dart';
 import 'services/log_auto_uploader.dart';
 import 'services/log_file_util.dart';
 import 'services/update_checker.dart';
+import 'utils/web_reset.dart';
 import 'widgets/accessibility_fab.dart';
 
 Future<void> main() async {
@@ -34,6 +35,16 @@ Future<void> main() async {
     }
   }
   await AppConfig.init();
+
+  // Web dev: open /?reset_setup=1 in the browser address bar (full page
+  // load — terminal hot restart alone does not pass this query param).
+  if (kIsWeb && Uri.base.queryParameters['reset_setup'] == '1') {
+    await wipeBrowserStorage();
+    await AppConfig.init();
+    stripSetupResetQuery();
+    LogFileUtil.i('app.reset_setup_via_url configured=${AppConfig.isConfigured}');
+  }
+
   await LotteryStockService.init();
 
   // First entry in the on-disk log — gives field-debug log files a

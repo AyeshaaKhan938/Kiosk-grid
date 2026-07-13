@@ -36,14 +36,33 @@ class AppConfig {
   // up to the kiosk and tap "Send to vms-cloud" by hand.
   static const _kAutoUploadLogs = 'cfg_auto_upload_logs';
 
-  // Backend mode: 'vmscloud' | 'reyeah'
+  // Backend mode: 'vmscloud' | 'reyeah' | 'afen' | 'tcn'
   static const _kBackendMode = 'cfg_backend_mode';
+
+  // AFEN Open Platform REST + VMC FunCode
+  static const _kAfenBaseUrl = 'cfg_afen_base_url';
+  static const _kAfenAppId = 'cfg_afen_app_id';
+  static const _kAfenAppSecret = 'cfg_afen_app_secret';
+  static const _kAfenDeviceId = 'cfg_afen_device_id';
+  static const _kAfenVmcUrl = 'cfg_afen_vmc_url';
+  static const _kAfenMachineId = 'cfg_afen_machine_id';
+  static const _kAfenSignMethod = 'cfg_afen_sign_method';
+  static const _kAfenBearerToken = 'cfg_afen_bearer_token';
+
+  // TCN serial / coil control
+  static const _kTcnSerialBaud = 'cfg_tcn_serial_baud';
+  static const _kTcnBoardType = 'cfg_tcn_board_type'; // 'new' | 'old'
+  static const _kTcnClearFaultCommand = 'cfg_tcn_clear_fault_cmd';
 
   // Reyeah Cloud credentials
   static const _kVmBaseUrl = 'cfg_vm_base_url';
   static const _kVmAppId = 'cfg_vm_app_id';
   static const _kVmAppSecret = 'cfg_vm_app_secret';
   static const _kVmMachineNo = 'cfg_vm_machine_no';
+
+  // Age verification — customer scans QR, uploads ID on phone, backend verifies 18+.
+  static const _kAgeVerificationEnabled = 'cfg_age_verification_enabled';
+  static const _kAgeVerificationWebBase = 'cfg_age_verification_web_base';
 
   // TTY serial — path of the Reyeah Control Board's UART device on the tablet.
   // Default /dev/ttyS0 covers most Reyeah T1-02 mainboards; admin can override
@@ -211,6 +230,43 @@ static String get ttyPathLift =>
   static Future<void> setTtyPath(String path) async =>
       _prefs?.setString(_kTtyPath, path.trim());
 
+  // ── Age verification ─────────────────────────────────────────────────────
+
+  /// When true, customers must verify age (ID scan via phone QR) before
+  /// entering their redemption code. Defaults to false until vms-cloud ships
+  /// the matching API endpoints.
+  static bool get ageVerificationEnabled =>
+      _prefs?.getBool(_kAgeVerificationEnabled) ?? false;
+
+  static Future<void> setAgeVerificationEnabled(bool value) async =>
+      _prefs?.setBool(_kAgeVerificationEnabled, value);
+
+  /// Public web base for the mobile ID-upload page (no /api/v1 suffix).
+  /// Example: https://cloud.vmfsusa.com
+  static String get ageVerificationWebBase {
+    final stored = _prefs?.getString(_kAgeVerificationWebBase);
+    if (stored != null && stored.isNotEmpty) {
+      return stored.replaceAll(RegExp(r'/$'), '');
+    }
+    final envVal = dotenv.env['AGE_VERIFICATION_WEB_BASE'];
+    if (envVal != null && envVal.isNotEmpty) {
+      return envVal.replaceAll(RegExp(r'/$'), '');
+    }
+    // Derive from API URL: https://cloud.vmfsusa.com/api/v1 → …/cloud.vmfsusa.com
+    final api = apiBaseUrl.replaceAll(RegExp(r'/$'), '');
+    if (api.endsWith('/api/v1')) {
+      return api.substring(0, api.length - '/api/v1'.length);
+    }
+    return 'https://cloud.vmfsusa.com';
+  }
+
+  static Future<void> setAgeVerificationWebBase(String url) async =>
+      _prefs?.setString(_kAgeVerificationWebBase, url.trim());
+
+  /// Full URL encoded in the kiosk QR code for a given session.
+  static String ageVerificationVerifyUrl(String sessionId) =>
+      '$ageVerificationWebBase/verify?session=$sessionId';
+
   /// Guarda el lottery draw token (botón de sorteo para clientes).
   static Future<void> setLotteryToken(String token) async =>
       _prefs?.setString(_kLotteryToken, token.trim());
@@ -221,13 +277,126 @@ static String get ttyPathLift =>
 
   // ── Backend mode ─────────────────────────────────────────────────────────
 
-  /// 'vmscloud' → usa el backend Laravel (vms-cloud).
-  /// 'reyeah'   → usa Reyeah Cloud directamente.
+  /// 'vmscloud' → Laravel vms-cloud
+  /// 'reyeah'   → Reyeah Cloud
+  /// 'afen'     → AFEN Open Platform REST + FunCode VMC
+  /// 'tcn'      → vms-cloud catalog + TCN serial coil dispense
   static String get backendMode =>
       _prefs?.getString(_kBackendMode) ?? 'vmscloud';
 
   static Future<void> setBackendMode(String mode) async =>
       _prefs?.setString(_kBackendMode, mode);
+
+  /// UART / serial protocol for physical coil dispense.
+  static String get hardwareProtocol {
+    switch (backendMode) {
+      case 'tcn':
+        return 'tcn';
+      case 'afen':
+        return 'afen';
+      default:
+        return 'reyeah';
+    }
+  }
+
+  // ── AFEN Open Platform + VMC ─────────────────────────────────────────────
+
+  static String get afenBaseUrl =>
+      _prefs?.getString(_kAfenBaseUrl) ??
+      dotenv.env['AFEN_BASE_URL'] ??
+      '';
+
+  static String get afenAppId =>
+      _prefs?.getString(_kAfenAppId) ?? dotenv.env['AFEN_APP_ID'] ?? '';
+
+  static String get afenAppSecret =>
+      _prefs?.getString(_kAfenAppSecret) ??
+      dotenv.env['AFEN_APP_SECRET'] ??
+      '';
+
+  static String get afenDeviceId =>
+      _prefs?.getString(_kAfenDeviceId) ??
+      dotenv.env['AFEN_DEVICE_ID'] ??
+      '';
+
+  static String get afenVmcUrl =>
+      _prefs?.getString(_kAfenVmcUrl) ?? dotenv.env['AFEN_VMC_URL'] ?? '';
+
+  static String get afenMachineId =>
+      _prefs?.getString(_kAfenMachineId) ??
+      dotenv.env['AFEN_MACHINE_ID'] ??
+      machineNo;
+
+  static String get afenSignMethod =>
+      _prefs?.getString(_kAfenSignMethod) ??
+      dotenv.env['AFEN_SIGN_METHOD'] ??
+      'hmac-sha256';
+
+  static String get afenBearerToken =>
+      _prefs?.getString(_kAfenBearerToken) ??
+      dotenv.env['AFEN_BEARER_TOKEN'] ??
+      '';
+
+  static Future<void> saveAfen({
+    required String baseUrl,
+    required String appId,
+    required String appSecret,
+    required String deviceId,
+    required String vmcUrl,
+    required String machineId,
+    String signMethod = 'hmac-sha256',
+    String bearerToken = '',
+  }) async {
+    final p = _prefs!;
+    await Future.wait([
+      p.setString(_kAfenBaseUrl, baseUrl.trim()),
+      p.setString(_kAfenAppId, appId.trim()),
+      p.setString(_kAfenAppSecret, appSecret.trim()),
+      p.setString(_kAfenDeviceId, deviceId.trim()),
+      p.setString(_kAfenVmcUrl, vmcUrl.trim()),
+      p.setString(_kAfenMachineId, machineId.trim()),
+      p.setString(_kAfenSignMethod, signMethod.trim()),
+      p.setString(_kAfenBearerToken, bearerToken.trim()),
+    ]);
+  }
+
+  // ── TCN serial ────────────────────────────────────────────────────────────
+
+  static int get tcnSerialBaud {
+    final stored = _prefs?.getInt(_kTcnSerialBaud);
+    if (stored != null && stored > 0) return stored;
+    final env = int.tryParse(dotenv.env['TCN_SERIAL_BAUD'] ?? '');
+    return env ?? 9600;
+  }
+
+  static String get tcnBoardType =>
+      _prefs?.getString(_kTcnBoardType) ??
+      dotenv.env['TCN_BOARD_TYPE'] ??
+      'new';
+
+  static String get tcnClearFaultCommand =>
+      _prefs?.getString(_kTcnClearFaultCommand) ??
+      dotenv.env['TCN_CLEAR_FAULT_CMD'] ??
+      r'$$$|E|1|%%%';
+
+  static Future<void> saveTcn({
+    int? serialBaud,
+    String? boardType,
+    String? clearFaultCommand,
+  }) async {
+    final p = _prefs!;
+    final ops = <Future<bool>>[];
+    if (serialBaud != null) {
+      ops.add(p.setInt(_kTcnSerialBaud, serialBaud));
+    }
+    if (boardType != null) {
+      ops.add(p.setString(_kTcnBoardType, boardType.trim()));
+    }
+    if (clearFaultCommand != null) {
+      ops.add(p.setString(_kTcnClearFaultCommand, clearFaultCommand.trim()));
+    }
+    if (ops.isNotEmpty) await Future.wait(ops);
+  }
 
   // ── Reyeah Cloud credentials ─────────────────────────────────────────────
 
@@ -280,7 +449,12 @@ static String get ttyPathLift =>
     ]);
   }
 
-  static Future<void> clear() async => _prefs?.clear();
+  static Future<void> clear() async {
+    final p = _prefs ?? await SharedPreferences.getInstance();
+    await p.remove(_kConfigured);
+    await p.clear();
+    _prefs = await SharedPreferences.getInstance();
+  }
 
   // ── Test de conexión al backend ──────────────────────────────────────────
 

@@ -5,6 +5,8 @@ import 'package:usb_serial/usb_serial.dart';
 import '../services/app_config.dart';
 import '../services/kiosk_lockdown.dart';
 import '../services/reyeah_service.dart';
+import '../services/afen_open_platform_service.dart';
+import '../services/tcn_serial_service.dart';
 import '../services/tty_serial.dart';
 import '../services/update_service.dart';
 import '../services/vending_machine_service.dart';
@@ -98,8 +100,25 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             const SizedBox(height: 20),
           ],
 
-          // Sección: Acciones vms-cloud (solo cuando mode == vmscloud)
-          if (AppConfig.backendMode == 'vmscloud') ...[
+          // ── AFEN Open Platform + VMC (mode == afen) ─────────────────
+          if (AppConfig.backendMode == 'afen') ...[
+            _buildSectionLabel('AFEN OPEN PLATFORM'),
+            const SizedBox(height: 10),
+            _AfenCredentialsPanel(onSaved: () => setState(() {})),
+            const SizedBox(height: 20),
+          ],
+
+          // ── TCN serial / coil settings (mode == tcn) ──────────────────
+          if (AppConfig.backendMode == 'tcn') ...[
+            _buildSectionLabel('TCN SERIAL / COIL'),
+            const SizedBox(height: 10),
+            _TcnSettingsPanel(onSaved: () => setState(() {})),
+            const SizedBox(height: 20),
+          ],
+
+          // Sección: Acciones vms-cloud (vmscloud + tcn use Laravel catalog)
+          if (AppConfig.backendMode == 'vmscloud' ||
+              AppConfig.backendMode == 'tcn') ...[
             _buildAction(
               icon: Icons.edit_outlined,
               label: 'Edit Configuration',
@@ -142,6 +161,10 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
 
           // ── Toggle: Simulate Dispense ──────────────────────────────────
           _buildSimulateToggle(),
+          const SizedBox(height: 12),
+
+          // ── Toggle: Age verification ─────────────────────────────────
+          _buildAgeVerificationToggle(),
           const SizedBox(height: 12),
 
           // ── Toggle: Auto-update ────────────────────────────────────────
@@ -370,6 +393,22 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             icon: Icons.cloud_outlined,
             color: const Color(0xFF00BCD4),
           ),
+          Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
+          _buildModeOption(
+            value: 'afen',
+            label: 'AFEN Open Platform',
+            subtitle: 'AFEN REST slots + FunCode VMC vend',
+            icon: Icons.hub_outlined,
+            color: const Color(0xFFFF9800),
+          ),
+          Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
+          _buildModeOption(
+            value: 'tcn',
+            label: 'TCN Machine',
+            subtitle: 'vms-cloud catalog + TCN serial coil dispense',
+            icon: Icons.settings_input_component_outlined,
+            color: const Color(0xFF9575CD),
+          ),
         ],
       ),
     );
@@ -493,6 +532,64 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             activeTrackColor: const Color(0xFFFF9800).withValues(alpha: 0.4),
             onChanged: (val) async {
               await AppConfig.setSimulateDispense(val);
+              setState(() {});
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Age verification toggle ─────────────────────────────────────────────
+
+  Widget _buildAgeVerificationToggle() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1A2B),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFF007ACC).withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFF007ACC).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.verified_user_outlined,
+                color: Color(0xFF007ACC), size: 22),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Age Verification (18+)',
+                    style: TextStyle(
+                        color: Color(0xFF007ACC),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15)),
+                const SizedBox(height: 3),
+                Text(
+                  AppConfig.ageVerificationEnabled
+                      ? 'ON — QR ID scan required before code entry'
+                      : 'OFF — Customers go straight to code entry',
+                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: AppConfig.ageVerificationEnabled,
+            activeThumbColor: const Color(0xFF007ACC),
+            activeTrackColor: const Color(0xFF007ACC).withValues(alpha: 0.4),
+            onChanged: (val) async {
+              await AppConfig.setAgeVerificationEnabled(val);
               setState(() {});
             },
           ),
@@ -1291,6 +1388,19 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
 
   // ── Info card ────────────────────────────────────────────────────────────
 
+  String _backendModeLabel() {
+    switch (AppConfig.backendMode) {
+      case 'reyeah':
+        return 'Reyeah Cloud';
+      case 'afen':
+        return 'AFEN Open Platform';
+      case 'tcn':
+        return 'TCN + vms-cloud';
+      default:
+        return 'vms-cloud';
+    }
+  }
+
   Widget _buildInfoCard() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1313,8 +1423,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _infoRow('Backend Mode',
-              AppConfig.backendMode == 'reyeah' ? 'Reyeah Cloud' : 'vms-cloud'),
+          _infoRow('Backend Mode', _backendModeLabel()),
           if (AppConfig.backendMode == 'reyeah') ...[
             _infoRow('Reyeah Machine', AppConfig.vmMachineNo),
             _infoRow(
@@ -1322,6 +1431,17 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                 AppConfig.vmAppId.isNotEmpty
                     ? '${AppConfig.vmAppId.substring(0, AppConfig.vmAppId.length.clamp(0, 8))}…'
                     : '—'),
+          ] else if (AppConfig.backendMode == 'afen') ...[
+            _infoRow('AFEN Device ID', AppConfig.afenDeviceId),
+            _infoRow('AFEN VMC URL',
+                AppConfig.afenVmcUrl.isNotEmpty ? AppConfig.afenVmcUrl : '—'),
+            _infoRow('Open Platform URL',
+                AppConfig.afenBaseUrl.isNotEmpty ? AppConfig.afenBaseUrl : '—'),
+          ] else if (AppConfig.backendMode == 'tcn') ...[
+            _infoRow('Machine No.', AppConfig.machineNo),
+            _infoRow('TCN Serial Baud', '${AppConfig.tcnSerialBaud}'),
+            _infoRow('Board Type', AppConfig.tcnBoardType),
+            _infoRow('TTY Port', AppConfig.ttyPath),
           ] else ...[
             _infoRow('Machine No.', AppConfig.machineNo),
             _infoRow('API URL', AppConfig.apiBaseUrl),
@@ -1743,7 +1863,12 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
 
     if (confirmed == true && mounted) {
       await AppConfig.clear();
-      if (mounted) Navigator.pop(context); // cerrar admin panel
+      await AppConfig.init();
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const SetupWizardScreen()),
+        (_) => false,
+      );
     }
   }
 }
@@ -2388,6 +2513,316 @@ class _ReyeahCredentialsPanelState extends State<_ReyeahCredentialsPanel> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── AFEN Open Platform credentials ───────────────────────────────────────────
+
+class _AfenCredentialsPanel extends StatefulWidget {
+  final VoidCallback onSaved;
+  const _AfenCredentialsPanel({required this.onSaved});
+
+  @override
+  State<_AfenCredentialsPanel> createState() => _AfenCredentialsPanelState();
+}
+
+class _AfenCredentialsPanelState extends State<_AfenCredentialsPanel> {
+  late final TextEditingController _baseUrlCtrl;
+  late final TextEditingController _appIdCtrl;
+  late final TextEditingController _appSecretCtrl;
+  late final TextEditingController _deviceIdCtrl;
+  late final TextEditingController _vmcUrlCtrl;
+  late final TextEditingController _machineIdCtrl;
+
+  bool _obscureSecret = true;
+  bool _saving = false;
+  bool _testing = false;
+  String? _testResult;
+  bool _testOk = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _baseUrlCtrl = TextEditingController(text: AppConfig.afenBaseUrl);
+    _appIdCtrl = TextEditingController(text: AppConfig.afenAppId);
+    _appSecretCtrl = TextEditingController(text: AppConfig.afenAppSecret);
+    _deviceIdCtrl = TextEditingController(text: AppConfig.afenDeviceId);
+    _vmcUrlCtrl = TextEditingController(text: AppConfig.afenVmcUrl);
+    _machineIdCtrl = TextEditingController(text: AppConfig.afenMachineId);
+  }
+
+  @override
+  void dispose() {
+    _baseUrlCtrl.dispose();
+    _appIdCtrl.dispose();
+    _appSecretCtrl.dispose();
+    _deviceIdCtrl.dispose();
+    _vmcUrlCtrl.dispose();
+    _machineIdCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _persist() async {
+    await AppConfig.saveAfen(
+      baseUrl: _baseUrlCtrl.text,
+      appId: _appIdCtrl.text,
+      appSecret: _appSecretCtrl.text,
+      deviceId: _deviceIdCtrl.text,
+      vmcUrl: _vmcUrlCtrl.text,
+      machineId: _machineIdCtrl.text,
+    );
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    await _persist();
+    setState(() => _saving = false);
+    widget.onSaved();
+  }
+
+  Future<void> _test() async {
+    setState(() {
+      _testing = true;
+      _testResult = null;
+    });
+    await _persist();
+    final err = await AfenOpenPlatformService.testCredentials();
+    if (mounted) {
+      setState(() {
+        _testing = false;
+        _testOk = err == null;
+        _testResult = err ?? 'Connected to AFEN Open Platform ✓';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1A2B),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: const Color(0xFFFF9800).withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'REST API loads product grid coils/slots. VMC URL handles FunCode vend.',
+            style: TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+          const SizedBox(height: 14),
+          _afenField('Open Platform URL', _baseUrlCtrl,
+              hint: 'https://open.afenvend.com'),
+          const SizedBox(height: 10),
+          _afenField('App ID', _appIdCtrl, hint: 'app_id'),
+          const SizedBox(height: 10),
+          _afenField('App Secret', _appSecretCtrl,
+              hint: '••••••••', obscure: _obscureSecret),
+          const SizedBox(height: 10),
+          _afenField('Device ID (mid)', _deviceIdCtrl,
+              hint: 'AFEN device / coil map id'),
+          const SizedBox(height: 10),
+          _afenField('VMC Server URL', _vmcUrlCtrl,
+              hint: 'FunCode HTTP endpoint on cloud'),
+          const SizedBox(height: 10),
+          _afenField('Machine ID', _machineIdCtrl,
+              hint: 'FunCode MachineID field'),
+          if (_testResult != null) ...[
+            const SizedBox(height: 12),
+            Text(_testResult!,
+                style: TextStyle(
+                    color: _testOk ? Colors.greenAccent : Colors.redAccent,
+                    fontSize: 12)),
+          ],
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _testing ? null : _test,
+                child: Text(_testing ? 'Testing…' : 'Test REST'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _saving ? null : _save,
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF9800)),
+                child: Text(_saving ? 'Saving…' : 'Save'),
+              ),
+            ),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  Widget _afenField(String label, TextEditingController ctrl,
+      {required String hint, bool obscure = false}) {
+    return TextField(
+      controller: ctrl,
+      readOnly: true,
+      obscureText: obscure,
+      style: const TextStyle(color: Colors.white, fontSize: 13),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Colors.white54, fontSize: 12),
+        hintText: hint,
+        hintStyle: const TextStyle(color: Colors.white24),
+        filled: true,
+        fillColor: const Color(0xFF060E18),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+      onTap: () => showKeypad(
+        context,
+        controller: ctrl,
+        mode: KeypadMode.alphanumeric,
+        obscureText: obscure,
+        title: label.toUpperCase(),
+        hint: hint,
+      ),
+    );
+  }
+}
+
+// ── TCN serial / coil settings ───────────────────────────────────────────────
+
+class _TcnSettingsPanel extends StatefulWidget {
+  final VoidCallback onSaved;
+  const _TcnSettingsPanel({required this.onSaved});
+
+  @override
+  State<_TcnSettingsPanel> createState() => _TcnSettingsPanelState();
+}
+
+class _TcnSettingsPanelState extends State<_TcnSettingsPanel> {
+  late final TextEditingController _baudCtrl;
+  String _boardType = AppConfig.tcnBoardType;
+  bool _saving = false;
+  bool _testing = false;
+  String? _queryResult;
+
+  @override
+  void initState() {
+    super.initState();
+    _baudCtrl =
+        TextEditingController(text: '${AppConfig.tcnSerialBaud}');
+  }
+
+  @override
+  void dispose() {
+    _baudCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    await AppConfig.saveTcn(
+      serialBaud: int.tryParse(_baudCtrl.text.trim()) ?? 9600,
+      boardType: _boardType,
+    );
+    setState(() => _saving = false);
+    widget.onSaved();
+  }
+
+  Future<void> _querySlots() async {
+    setState(() {
+      _testing = true;
+      _queryResult = null;
+    });
+    try {
+      final raw = _boardType == 'old'
+          ? await TcnSerialService.querySlotsOldBoard()
+          : await TcnSerialService.querySlotsNewBoard();
+      _queryResult = raw.isEmpty ? 'No response from TCN board.' : raw;
+    } catch (e) {
+      _queryResult = e.toString();
+    }
+    if (mounted) setState(() => _testing = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1A2B),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: const Color(0xFF9575CD).withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'TCN: product grid from vms-cloud, coil motor via TTY serial.',
+            style: TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _baudCtrl,
+            readOnly: true,
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(
+              labelText: 'Serial baud rate',
+              labelStyle: TextStyle(color: Colors.white54),
+            ),
+            onTap: () => showKeypad(
+              context,
+              controller: _baudCtrl,
+              mode: KeypadMode.numeric,
+              title: 'BAUD RATE',
+            ),
+          ),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<String>(
+            initialValue: _boardType,
+            dropdownColor: const Color(0xFF0D1A2B),
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(
+              labelText: 'Control board type',
+              labelStyle: TextStyle(color: Colors.white54),
+            ),
+            items: const [
+              DropdownMenuItem(value: 'new', child: Text('New board')),
+              DropdownMenuItem(value: 'old', child: Text('Old board')),
+            ],
+            onChanged: (v) => setState(() => _boardType = v ?? 'new'),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'TTY: ${AppConfig.ttyPath} · Dispense: \$\$\$|D|slot|1|0|255|%%%',
+            style: const TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+          if (_queryResult != null) ...[
+            const SizedBox(height: 10),
+            Text(_queryResult!,
+                style: const TextStyle(color: Colors.white54, fontSize: 11)),
+          ],
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _testing ? null : _querySlots,
+                child: Text(_testing ? 'Reading…' : 'Query coils'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _saving ? null : _save,
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF9575CD)),
+                child: Text(_saving ? 'Saving…' : 'Save'),
+              ),
+            ),
+          ]),
+        ],
+      ),
     );
   }
 }

@@ -70,11 +70,26 @@ class ApiService {
   /// records the redemption to prevent reuse, and returns tier configuration.
   /// We then roll a 1:49 weighted dice locally to pick Tier A or Tier B.
   ///
+  /// [ageVerificationSessionId] — required when age verification is enabled;
+  /// vms-cloud checks that this session was verified 18+ before redeeming.
+  ///
   /// Throws [LotteryCodeException] with a customer-facing message if the
   /// code is invalid, already redeemed, or the validation service is down.
-  static Future<LotteryCodeResult> lookupCode(String code) async {
+  static Future<LotteryCodeResult> lookupCode(
+    String code, {
+    String? ageVerificationSessionId,
+  }) async {
     final url = Uri.parse('$_baseUrl/scratch-card/redeem');
     final normalized = code.trim().toUpperCase();
+
+    final payload = <String, dynamic>{
+      'code': normalized,
+      'machine_no': _machineNo,
+    };
+    if (ageVerificationSessionId != null &&
+        ageVerificationSessionId.isNotEmpty) {
+      payload['age_verification_session_id'] = ageVerificationSessionId;
+    }
 
     final response = await http
         .post(
@@ -83,10 +98,7 @@ class ApiService {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
           },
-          body: jsonEncode({
-            'code': normalized,
-            'machine_no': _machineNo,
-          }),
+          body: jsonEncode(payload),
         )
         .timeout(const Duration(seconds: 15));
 
@@ -217,6 +229,97 @@ class ApiService {
   static Map<String, dynamic>? _tryDecode(String body) {
     try { return jsonDecode(body) as Map<String, dynamic>; } catch (_) { return null; }
   }
+
+  // ── Retail purchase (vending) ─────────────────────────────────────────────
+
+  /// POST /api/v1/orders
+  ///
+  /// Creates a paid order, verifies payment server-side, and returns the
+  /// slot to vend. vms-cloud must confirm payment before responding 200.
+  static Future<PurchaseOrderResult> createPurchaseOrder({
+    required int lineNumber,
+    required double amount,
+    required String productName,
+    String? ageVerificationSessionId,
+  }) async {
+    final url = Uri.parse('$_baseUrl/orders');
+    final payload = <String, dynamic>{
+      'machine_no':   _machineNo,
+      'line_number':  lineNumber,
+      'amount':       amount,
+      'product_name': productName,
+      'payment_method': 'card',
+    };
+    if (ageVerificationSessionId != null &&
+        ageVerificationSessionId.isNotEmpty) {
+      payload['age_verification_session_id'] = ageVerificationSessionId;
+    }
+
+    final response = await http
+        .post(
+          url,
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(payload),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      return PurchaseOrderResult(
+        orderId: body['order_id']?.toString() ??
+            body['id']?.toString() ??
+            '',
+        paymentVerified: body['payment_verified'] == true ||
+            body['status']?.toString() == 'paid',
+        lineNumber: _parseInt(body['line_number']) ?? lineNumber,
+        paymentMethod: body['payment_method']?.toString(),
+        message: body['message']?.toString(),
+      );
+    }
+
+    final body = _tryDecode(response.body);
+    final msg = body?['message']?.toString();
+
+    if (response.statusCode == 402) {
+      throw PurchaseOrderException(
+        msg ?? 'Payment declined. Please try another card.',
+      );
+    }
+    if (response.statusCode == 422) {
+      throw PurchaseOrderException(msg ?? 'Could not complete purchase.');
+    }
+
+    throw PurchaseOrderException(
+      msg ?? 'Server error (${response.statusCode}). Please try again.',
+    );
+  }
+}
+
+/// Cloud order response for a retail purchase.
+class PurchaseOrderResult {
+  final String orderId;
+  final bool paymentVerified;
+  final int? lineNumber;
+  final String? paymentMethod;
+  final String? message;
+
+  const PurchaseOrderResult({
+    required this.orderId,
+    required this.paymentVerified,
+    this.lineNumber,
+    this.paymentMethod,
+    this.message,
+  });
+}
+
+class PurchaseOrderException implements Exception {
+  final String message;
+  const PurchaseOrderException(this.message);
+  @override
+  String toString() => message;
 }
 
 /// Customer-facing error from a scratch-card lookup.

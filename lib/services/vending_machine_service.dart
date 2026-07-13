@@ -4,9 +4,11 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'admin_api_service.dart';
 import 'app_config.dart';
+import 'afen_vmc_service.dart';
 import 'dispense_wake_lock.dart';
 import 'log_file_util.dart';
 import 'serial_frame_assembler.dart';
+import 'tcn_serial_service.dart';
 import 'tty_serial.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -314,17 +316,40 @@ static Uint8List buildResetVmcFrame() => _buildFrame(0xA1, [0xFF]);
         await Future.delayed(const Duration(milliseconds: 1200));
         physicalSuccess = true;
       } else {
-        // ── Modo real (TTY serial — /dev/ttyS* directly via JNI) ─────────
-        //
-        // Confirmed against the factory APK: the Reyeah Control Board on
-        // this hardware is wired to the tablet's UART pins, NOT through a
-        // USB-to-serial bridge. usb_serial enumeration sees nothing because
-        // the device isn't on USB at all.
-        physicalSuccess = await _sendDeliveryViaTty(
-          lineNumber: lineNumber,
-          onProgress: onProgress,
-        );
-        if (!physicalSuccess) errorMsg = 'VMC did not confirm delivery.';
+        switch (AppConfig.hardwareProtocol) {
+          case 'tcn':
+            physicalSuccess =
+                await TcnSerialService.shipment(lineNumber);
+            if (!physicalSuccess) {
+              errorMsg = 'TCN board did not confirm delivery.';
+            }
+            break;
+          case 'afen':
+            // Reyeah UART motor + AFEN FunCode cloud feedback.
+            physicalSuccess = await _sendDeliveryViaTty(
+              lineNumber: lineNumber,
+              onProgress: onProgress,
+            );
+            if (physicalSuccess) {
+              try {
+                await AfenVmcService.deliveryFeedback(
+                  tradeNo: lotteryCode,
+                  slotNo: lineNumber,
+                  success: true,
+                  amount: '0',
+                );
+              } catch (_) {}
+            } else {
+              errorMsg = 'VMC did not confirm delivery.';
+            }
+            break;
+          default:
+            physicalSuccess = await _sendDeliveryViaTty(
+              lineNumber: lineNumber,
+              onProgress: onProgress,
+            );
+            if (!physicalSuccess) errorMsg = 'VMC did not confirm delivery.';
+        }
       }
     } catch (e) {
       errorMsg = e.toString();

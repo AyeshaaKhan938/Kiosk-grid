@@ -27,7 +27,14 @@ import 'result_screen.dart';
 ///      the THANK YOU screen.
 class LotteryCodeScreen extends StatefulWidget {
   final MachineSlot? slot;
-  const LotteryCodeScreen({super.key, this.slot});
+  /// Set when the customer completed age verification on this visit.
+  final String? ageVerificationSessionId;
+
+  const LotteryCodeScreen({
+    super.key,
+    this.slot,
+    this.ageVerificationSessionId,
+  });
 
   @override
   State<LotteryCodeScreen> createState() => _LotteryCodeScreenState();
@@ -99,7 +106,10 @@ class _LotteryCodeScreenState extends State<LotteryCodeScreen> {
     setState(() { _state = _State.validating; _errorMsg = ''; });
 
     try {
-      final result = await ApiService.lookupCode(code);
+      final result = await ApiService.lookupCode(
+        code,
+        ageVerificationSessionId: widget.ageVerificationSessionId,
+      );
       if (!mounted) return;
 
       if (result.alreadyRedeemed) {
