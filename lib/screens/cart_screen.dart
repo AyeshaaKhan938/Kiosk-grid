@@ -59,8 +59,14 @@ class _CartScreenState extends State<CartScreen> {
       appBar: AppBar(
         title: const Text('Your Cart'),
         centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => Navigator.maybePop(context),
+        ),
       ),
-      body: ListenableBuilder(
+      body: SafeArea(
+        top: false,
+        child: ListenableBuilder(
         listenable: _cart,
         builder: (context, _) {
           if (_cart.isEmpty) {
@@ -151,6 +157,7 @@ class _CartScreenState extends State<CartScreen> {
             ],
           );
         },
+        ),
       ),
     );
   }

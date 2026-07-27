@@ -3,10 +3,10 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'app_config.dart';
 
-/// AFEN VMC Protocol V2.5 — Integration #2 (FunCode HTTP).
+/// AFEN VMC Protocol V2.5 — motor vend only (FunCode HTTP).
 ///
-/// Used for live vend authorization and delivery feedback when the kiosk
-/// connects to an AFEN VMC cloud endpoint.
+/// Product catalog, ads, stock and prices come from vms-cloud. This service
+/// only authorizes physical vends (FunCode 2000) and reports delivery (5000).
 class AfenVmcService {
   static String get _vmcUrl => AppConfig.afenVmcUrl;
   static String get _machineId => AppConfig.afenMachineId;
@@ -149,6 +149,25 @@ class AfenVmcService {
       productName: productName,
     );
     return _isOk(feedback);
+  }
+
+  /// Returns null when the VMC endpoint is reachable and returns JSON.
+  static Future<String?> testVmcEndpoint() async {
+    if (_vmcUrl.isEmpty) {
+      return 'VMC Server URL is required.';
+    }
+    if (_machineId.isEmpty) {
+      return 'Machine ID is required.';
+    }
+    try {
+      final data = await _postFunCode({
+        'FunCode': '9000',
+        'TradeNo': 'connectivity-test',
+      });
+      return data.containsKey('Status') ? null : 'Unexpected VMC response.';
+    } catch (e) {
+      return e.toString();
+    }
   }
 
   static String _nowString() {

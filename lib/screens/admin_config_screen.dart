@@ -5,7 +5,7 @@ import 'package:usb_serial/usb_serial.dart';
 import '../services/app_config.dart';
 import '../services/kiosk_lockdown.dart';
 import '../services/reyeah_service.dart';
-import '../services/afen_open_platform_service.dart';
+import '../services/afen_vmc_service.dart';
 import '../services/tcn_serial_service.dart';
 import '../services/tty_serial.dart';
 import '../services/update_service.dart';
@@ -102,7 +102,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           if (AppConfig.hardwareProtocol == 'afen') ...[
             _buildSectionLabel('AFEN VMC SETTINGS'),
             const SizedBox(height: 10),
-            _AfenCredentialsPanel(onSaved: () => setState(() {})),
+            _AfenVmcPanel(onSaved: () => setState(() {})),
             const SizedBox(height: 20),
           ],
 
@@ -327,7 +327,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
               setState(() {});
             },
             label: 'AFEN VMC',
-            subtitle: 'AFEN authorize + UART motor + delivery feedback',
+            subtitle: 'FunCode motor authorize + UART — products from vms-cloud',
             icon: Icons.hub_outlined,
             color: const Color(0xFFFF9800),
           ),
@@ -1539,9 +1539,14 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
               ),
           ],
           if (AppConfig.hardwareProtocol == 'afen') ...[
-            _infoRow('AFEN Device ID', AppConfig.afenDeviceId),
             _infoRow('AFEN VMC URL',
                 AppConfig.afenVmcUrl.isNotEmpty ? AppConfig.afenVmcUrl : '—'),
+            _infoRow(
+              'AFEN Machine ID',
+              AppConfig.afenMachineId.isNotEmpty
+                  ? AppConfig.afenMachineId
+                  : AppConfig.machineNo,
+            ),
           ],
           if (AppConfig.hardwareProtocol == 'tcn') ...[
             _infoRow('TCN Serial Baud', '${AppConfig.tcnSerialBaud}'),
@@ -2607,25 +2612,20 @@ class _ReyeahCredentialsPanelState extends State<_ReyeahCredentialsPanel> {
   }
 }
 
-// ── AFEN Open Platform credentials ───────────────────────────────────────────
+// ── AFEN VMC (motor only — catalog/ads/stock from vms-cloud) ─────────────────
 
-class _AfenCredentialsPanel extends StatefulWidget {
+class _AfenVmcPanel extends StatefulWidget {
   final VoidCallback onSaved;
-  const _AfenCredentialsPanel({required this.onSaved});
+  const _AfenVmcPanel({required this.onSaved});
 
   @override
-  State<_AfenCredentialsPanel> createState() => _AfenCredentialsPanelState();
+  State<_AfenVmcPanel> createState() => _AfenVmcPanelState();
 }
 
-class _AfenCredentialsPanelState extends State<_AfenCredentialsPanel> {
-  late final TextEditingController _baseUrlCtrl;
-  late final TextEditingController _appIdCtrl;
-  late final TextEditingController _appSecretCtrl;
-  late final TextEditingController _deviceIdCtrl;
+class _AfenVmcPanelState extends State<_AfenVmcPanel> {
   late final TextEditingController _vmcUrlCtrl;
   late final TextEditingController _machineIdCtrl;
 
-  bool _obscureSecret = true;
   bool _saving = false;
   bool _testing = false;
   String? _testResult;
@@ -2634,31 +2634,23 @@ class _AfenCredentialsPanelState extends State<_AfenCredentialsPanel> {
   @override
   void initState() {
     super.initState();
-    _baseUrlCtrl = TextEditingController(text: AppConfig.afenBaseUrl);
-    _appIdCtrl = TextEditingController(text: AppConfig.afenAppId);
-    _appSecretCtrl = TextEditingController(text: AppConfig.afenAppSecret);
-    _deviceIdCtrl = TextEditingController(text: AppConfig.afenDeviceId);
     _vmcUrlCtrl = TextEditingController(text: AppConfig.afenVmcUrl);
-    _machineIdCtrl = TextEditingController(text: AppConfig.afenMachineId);
+    _machineIdCtrl = TextEditingController(
+      text: AppConfig.afenMachineId.isNotEmpty
+          ? AppConfig.afenMachineId
+          : AppConfig.machineNo,
+    );
   }
 
   @override
   void dispose() {
-    _baseUrlCtrl.dispose();
-    _appIdCtrl.dispose();
-    _appSecretCtrl.dispose();
-    _deviceIdCtrl.dispose();
     _vmcUrlCtrl.dispose();
     _machineIdCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _persist() async {
-    await AppConfig.saveAfen(
-      baseUrl: _baseUrlCtrl.text,
-      appId: _appIdCtrl.text,
-      appSecret: _appSecretCtrl.text,
-      deviceId: _deviceIdCtrl.text,
+    await AppConfig.saveAfenVmc(
       vmcUrl: _vmcUrlCtrl.text,
       machineId: _machineIdCtrl.text,
     );
@@ -2677,12 +2669,12 @@ class _AfenCredentialsPanelState extends State<_AfenCredentialsPanel> {
       _testResult = null;
     });
     await _persist();
-    final err = await AfenOpenPlatformService.testCredentials();
+    final err = await AfenVmcService.testVmcEndpoint();
     if (mounted) {
       setState(() {
         _testing = false;
         _testOk = err == null;
-        _testResult = err ?? 'Connected to AFEN Open Platform ✓';
+        _testResult = err ?? 'AFEN VMC endpoint reachable ✓';
       });
     }
   }
@@ -2701,26 +2693,17 @@ class _AfenCredentialsPanelState extends State<_AfenCredentialsPanel> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'REST API loads product grid coils/slots. VMC URL handles FunCode vend.',
-            style: TextStyle(color: Colors.white38, fontSize: 11),
+            'Products, ads, stock and prices come from vms-cloud. '
+            'AFEN is only used to authorize and report physical motor vends '
+            '(FunCode 2000 / 5000 over UART).',
+            style: TextStyle(color: Colors.white38, fontSize: 11, height: 1.4),
           ),
           const SizedBox(height: 14),
-          _afenField('Open Platform URL', _baseUrlCtrl,
-              hint: 'https://open.afenvend.com'),
-          const SizedBox(height: 10),
-          _afenField('App ID', _appIdCtrl, hint: 'app_id'),
-          const SizedBox(height: 10),
-          _afenField('App Secret', _appSecretCtrl,
-              hint: '••••••••', obscure: _obscureSecret),
-          const SizedBox(height: 10),
-          _afenField('Device ID (mid)', _deviceIdCtrl,
-              hint: 'AFEN device / coil map id'),
-          const SizedBox(height: 10),
           _afenField('VMC Server URL', _vmcUrlCtrl,
-              hint: 'FunCode HTTP endpoint on cloud'),
+              hint: 'FunCode HTTP endpoint on AFEN VMC cloud'),
           const SizedBox(height: 10),
           _afenField('Machine ID', _machineIdCtrl,
-              hint: 'FunCode MachineID field'),
+              hint: 'FunCode MachineID — usually same as VMFS machine no.'),
           if (_testResult != null) ...[
             const SizedBox(height: 12),
             Text(_testResult!,
@@ -2733,7 +2716,7 @@ class _AfenCredentialsPanelState extends State<_AfenCredentialsPanel> {
             Expanded(
               child: OutlinedButton(
                 onPressed: _testing ? null : _test,
-                child: Text(_testing ? 'Testing…' : 'Test REST'),
+                child: Text(_testing ? 'Testing…' : 'Test VMC'),
               ),
             ),
             const SizedBox(width: 10),
@@ -2752,11 +2735,10 @@ class _AfenCredentialsPanelState extends State<_AfenCredentialsPanel> {
   }
 
   Widget _afenField(String label, TextEditingController ctrl,
-      {required String hint, bool obscure = false}) {
+      {required String hint}) {
     return TextField(
       controller: ctrl,
       readOnly: true,
-      obscureText: obscure,
       style: const TextStyle(color: Colors.white, fontSize: 13),
       decoration: InputDecoration(
         labelText: label,
@@ -2771,7 +2753,6 @@ class _AfenCredentialsPanelState extends State<_AfenCredentialsPanel> {
         context,
         controller: ctrl,
         mode: KeypadMode.alphanumeric,
-        obscureText: obscure,
         title: label.toUpperCase(),
         hint: hint,
       ),

@@ -525,6 +525,8 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
 
     return Scaffold(
       backgroundColor: bg,
+      floatingActionButton: MobileCartFab(onTap: _openCart),
+      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
       body: Column(
         children: [
           _buildHeader(cs: cs, primary: primary, pad: pad),
@@ -624,41 +626,44 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
     return Container(
       padding: EdgeInsets.fromLTRB(pad, 10, pad, 6),
       color: bg,
-      child: Row(
-        children: [
-          _ToolChip(
-            icon: Icons.sort_rounded,
-            label: _sortLabel,
-            onTap: _showSortSheet,
-            primary: primary,
-            cs: cs,
-          ),
-          const SizedBox(width: 8),
-          _ToolChip(
-            icon: Icons.tune_rounded,
-            label: _filterLabel,
-            onTap: _showFilterSheet,
-            primary: primary,
-            cs: cs,
-          ),
-          const SizedBox(width: 8),
-          _ToolChip(
-            icon: Icons.menu_rounded,
-            label: 'Categories',
-            onTap: _showCategorySheet,
-            primary: primary,
-            cs: cs,
-          ),
-          const Spacer(),
-          Text(
-            '$visible shown',
-            style: TextStyle(
-              color: cs.onSurface.withValues(alpha: 0.55),
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _ToolChip(
+              icon: Icons.sort_rounded,
+              label: _sortLabel,
+              onTap: _showSortSheet,
+              primary: primary,
+              cs: cs,
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            _ToolChip(
+              icon: Icons.tune_rounded,
+              label: _filterLabel,
+              onTap: _showFilterSheet,
+              primary: primary,
+              cs: cs,
+            ),
+            const SizedBox(width: 8),
+            _ToolChip(
+              icon: Icons.menu_rounded,
+              label: 'Categories',
+              onTap: _showCategorySheet,
+              primary: primary,
+              cs: cs,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              '$visible shown',
+              style: TextStyle(
+                color: cs.onSurface.withValues(alpha: 0.55),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

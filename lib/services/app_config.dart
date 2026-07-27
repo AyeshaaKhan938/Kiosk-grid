@@ -328,7 +328,7 @@ static String get ttyPathLift =>
 
   static bool get isAfenVend => hardwareProtocol == 'afen';
 
-  // ── AFEN Open Platform + VMC ─────────────────────────────────────────────
+  // ── AFEN VMC (motor / FunCode only — catalog is vms-cloud) ───────────────
 
   static String get afenBaseUrl =>
       _prefs?.getString(_kAfenBaseUrl) ??
@@ -366,6 +366,19 @@ static String get ttyPathLift =>
       dotenv.env['AFEN_BEARER_TOKEN'] ??
       '';
 
+  static Future<void> saveAfenVmc({
+    required String vmcUrl,
+    required String machineId,
+  }) async {
+    final p = _prefs!;
+    await Future.wait([
+      p.setString(_kAfenVmcUrl, vmcUrl.trim()),
+      p.setString(_kAfenMachineId, machineId.trim()),
+    ]);
+  }
+
+  /// Legacy Open Platform fields — unused; catalog comes from vms-cloud.
+  @Deprecated('Open Platform REST is not used; products come from vms-cloud.')
   static Future<void> saveAfen({
     required String baseUrl,
     required String appId,

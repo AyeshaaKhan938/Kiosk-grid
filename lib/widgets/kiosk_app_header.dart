@@ -21,15 +21,20 @@ class KioskAppHeader extends StatelessWidget {
   });
 
   static double sidePad(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w = MediaQuery.sizeOf(context).width;
     if (w > 900) return 32;
     if (w > 600) return 24;
     return 16;
   }
 
+  static bool isCompact(BuildContext context) =>
+      MediaQuery.sizeOf(context).width < 520;
+
   @override
   Widget build(BuildContext context) {
     final pad = sidePad(context);
+    final compact = isCompact(context);
+    const iconConstraints = BoxConstraints(minWidth: 40, minHeight: 40);
 
     return Container(
       decoration: const BoxDecoration(
@@ -52,9 +57,9 @@ class KioskAppHeader extends StatelessWidget {
                   icon: Icon(Icons.arrow_back_ios_new_rounded,
                       color: Colors.white.withValues(alpha: 0.9), size: 20),
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  constraints: iconConstraints,
                 ),
-                const SizedBox(width: 4),
+                SizedBox(width: compact ? 2 : 4),
               ],
               GestureDetector(
                 onTap: onLogoTap,
@@ -62,28 +67,31 @@ class KioskAppHeader extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                   child: Image.asset(
                     'assets/images/vmfs-logo.jpg',
-                    height: 40,
-                    width: 40,
+                    height: compact ? 34 : 40,
+                    width: compact ? 34 : 40,
                     fit: BoxFit.cover,
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: compact ? 8 : 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Colors.white,
-                        fontSize: 16,
+                        fontSize: compact ? 14 : 16,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    if (subtitle != null && subtitle!.isNotEmpty) ...[
+                    if (!compact &&
+                        subtitle != null &&
+                        subtitle!.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
                         subtitle!,
@@ -98,58 +106,108 @@ class KioskAppHeader extends StatelessWidget {
                   ],
                 ),
               ),
-              if (onRefresh != null)
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: onRefresh,
-                  icon: Icon(Icons.refresh_rounded,
-                      color: Colors.white.withValues(alpha: 0.85), size: 22),
-                ),
-              if (onCart != null)
-                ListenableBuilder(
-                  listenable: CartService.instance,
-                  builder: (context, _) {
-                    final count = CartService.instance.itemCount;
-                    return Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        IconButton(
-                          tooltip: 'Cart',
-                          onPressed: onCart,
-                          icon: Icon(Icons.shopping_cart_outlined,
-                              color: Colors.white.withValues(alpha: 0.9),
-                              size: 24),
-                        ),
-                        if (count > 0)
-                          Positioned(
-                            right: 6,
-                            top: 6,
-                            child: Container(
-                              padding: const EdgeInsets.all(5),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFF6B35),
-                                shape: BoxShape.circle,
-                                border:
-                                    Border.all(color: Colors.white, width: 1.5),
-                              ),
-                              child: Text(
-                                count > 9 ? '9+' : '$count',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    );
-                  },
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (onRefresh != null)
+                    IconButton(
+                      tooltip: 'Refresh',
+                      onPressed: onRefresh,
+                      padding: EdgeInsets.zero,
+                      constraints: iconConstraints,
+                      icon: Icon(Icons.refresh_rounded,
+                          color: Colors.white.withValues(alpha: 0.85),
+                          size: compact ? 20 : 22),
+                    ),
+                  if (onCart != null) _CartHeaderButton(onTap: onCart!),
+                ],
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CartHeaderButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _CartHeaderButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: CartService.instance,
+      builder: (context, _) {
+        final count = CartService.instance.itemCount;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            IconButton(
+              tooltip: 'Cart',
+              onPressed: onTap,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+              icon: Icon(Icons.shopping_cart_outlined,
+                  color: Colors.white.withValues(alpha: 0.9), size: 24),
+            ),
+            if (count > 0)
+              Positioned(
+                right: 4,
+                top: 4,
+                child: IgnorePointer(
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF6B35),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: Text(
+                      count > 9 ? '9+' : '$count',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Bottom-left cart shortcut for narrow / mobile layouts.
+class MobileCartFab extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const MobileCartFab({super.key, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!KioskAppHeader.isCompact(context)) return const SizedBox.shrink();
+
+    return ListenableBuilder(
+      listenable: CartService.instance,
+      builder: (context, _) {
+        final count = CartService.instance.itemCount;
+        return Padding(
+          padding: const EdgeInsets.only(left: 8, bottom: 8),
+          child: FloatingActionButton.extended(
+            heroTag: 'mobile_cart_fab',
+            backgroundColor: const Color(0xFFFF6B35),
+            foregroundColor: Colors.white,
+            onPressed: onTap,
+            icon: const Icon(Icons.shopping_cart_outlined),
+            label: Text(count > 0 ? 'Cart ($count)' : 'Cart'),
+          ),
+        );
+      },
     );
   }
 }

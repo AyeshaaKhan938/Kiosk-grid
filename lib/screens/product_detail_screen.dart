@@ -166,6 +166,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
 
     return Scaffold(
       backgroundColor: bg,
+      floatingActionButton: MobileCartFab(onTap: _openCart),
+      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
       body: FadeTransition(
         opacity: _fadeAnim,
         child: Column(
