@@ -3,7 +3,6 @@ import '../models/machine_slot.dart';
 import 'api_service.dart';
 import 'app_config.dart';
 import 'reyeah_service.dart';
-import 'afen_vmc_service.dart';
 
 /// Result of a verified purchase ready for physical dispense.
 class PurchaseResult {
@@ -40,9 +39,6 @@ class PurchaseService {
 
     if (AppConfig.backendMode == 'reyeah') {
       return _checkoutReyeah(slot);
-    }
-    if (AppConfig.backendMode == 'afen') {
-      return _checkoutAfen(slot);
     }
     return _checkoutVmsCloud(slot, ageVerificationSessionId);
   }
@@ -85,28 +81,6 @@ class PurchaseService {
       slot: slot,
       amount: slot.price,
       paymentMethod: 'reyeah',
-    );
-  }
-
-  static Future<PurchaseResult> _checkoutAfen(MachineSlot slot) async {
-    // AFEN FunCode 8000/9000 payment can be wired later; for now authorize
-    // vend via FunCode 2000 and return order id = trade number.
-    final tradeNo = DateTime.now().millisecondsSinceEpoch.toString();
-    final auth = await AfenVmcService.identifyPassword(
-      slotNo: slot.lineNumber,
-      price: slot.price.toStringAsFixed(2),
-      tradeNo: tradeNo,
-    );
-    if (auth['Status']?.toString() != '0') {
-      throw PurchaseException(
-        auth['Err']?.toString() ?? 'AFEN vend authorization failed.',
-      );
-    }
-    return PurchaseResult(
-      orderId: tradeNo,
-      slot: slot,
-      amount: slot.price,
-      paymentMethod: 'afen',
     );
   }
 

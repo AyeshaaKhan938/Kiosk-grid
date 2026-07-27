@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/app_config.dart';
 import '../services/kiosk_lockdown.dart';
-import '../services/reyeah_service.dart';
 import '../widgets/onscreen_keypad.dart';
 import 'idle_screen.dart';
 
@@ -38,7 +37,6 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
   // previously-saved values flow through the same path.
   late String _backendMode;
   late String _apiBaseUrl;
-  late String _managementToken;
   late String _machineNo;
   late String _vmBaseUrl;
   late String _vmAppId;
@@ -51,7 +49,6 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
     super.initState();
     _backendMode     = AppConfig.backendMode;
     _apiBaseUrl      = AppConfig.apiBaseUrl;
-    _managementToken = AppConfig.managementToken;
     _machineNo       = AppConfig.machineNo;
     _vmBaseUrl       = AppConfig.vmBaseUrl;
     _vmAppId         = AppConfig.vmAppId;
@@ -110,7 +107,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       await AppConfig.save(
         apiBaseUrl:      _apiBaseUrl,
         machineNo:       _machineNo,
-        managementToken: _managementToken,
+        managementToken: AppConfig.managementToken,
         adminPin:        _adminPin,
         language:        'en',
       );
@@ -170,7 +167,6 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                     _StepBackend(
                       initialMode:             _backendMode,
                       initialUrl:              _apiBaseUrl,
-                      initialManagementToken:  _managementToken,
                       initialVmBaseUrl:        _vmBaseUrl,
                       initialVmAppId:          _vmAppId,
                       initialVmAppSecret:      _vmAppSecret,
@@ -179,7 +175,6 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                         setState(() {
                           _backendMode      = config.backendMode;
                           _apiBaseUrl       = config.apiBaseUrl;
-                          _managementToken  = config.managementToken;
                           _vmBaseUrl        = config.vmBaseUrl;
                           _vmAppId          = config.vmAppId;
                           _vmAppSecret      = config.vmAppSecret;
@@ -230,19 +225,14 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
       child: Row(
         children: [
           // Logo
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            decoration: BoxDecoration(
-              color: const Color(0xFF007ACC),
-              borderRadius: BorderRadius.circular(8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.asset(
+              'assets/images/vmfs-logo.jpg',
+              height: 44,
+              width: 44,
+              fit: BoxFit.cover,
             ),
-            child: const Text('VMFS',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  letterSpacing: 2,
-                )),
           ),
           const SizedBox(width: 20),
           Expanded(
@@ -472,14 +462,13 @@ class _StepNetworkState extends State<_StepNetwork> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STEP 2 — Backend  (mode-aware: Reyeah Cloud | vms-cloud)
+// STEP 2 — Backend  (vms-cloud)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Datos que recoge el step de backend al confirmar.
 class _BackendConfig {
   final String backendMode;
   final String apiBaseUrl;
-  final String managementToken;
   final String vmBaseUrl;
   final String vmAppId;
   final String vmAppSecret;
@@ -488,7 +477,6 @@ class _BackendConfig {
   const _BackendConfig({
     required this.backendMode,
     required this.apiBaseUrl,
-    required this.managementToken,
     required this.vmBaseUrl,
     required this.vmAppId,
     required this.vmAppSecret,
@@ -499,7 +487,6 @@ class _BackendConfig {
 class _StepBackend extends StatefulWidget {
   final String initialMode;
   final String initialUrl;
-  final String initialManagementToken;
   final String initialVmBaseUrl;
   final String initialVmAppId;
   final String initialVmAppSecret;
@@ -510,7 +497,6 @@ class _StepBackend extends StatefulWidget {
   const _StepBackend({
     required this.initialMode,
     required this.initialUrl,
-    required this.initialManagementToken,
     required this.initialVmBaseUrl,
     required this.initialVmAppId,
     required this.initialVmAppSecret,
@@ -524,49 +510,21 @@ class _StepBackend extends StatefulWidget {
 }
 
 class _StepBackendState extends State<_StepBackend> {
-  // ── Modo ──────────────────────────────────────────────────────────────────
-  late String _mode; // 'reyeah' | 'vmscloud'
+  static const _mode = 'vmscloud';
 
-  // ── vms-cloud ─────────────────────────────────────────────────────────────
   late final TextEditingController _urlCtrl;
-  late final TextEditingController _mgmtTokenCtrl;
   bool    _testingUrl   = false;
-  bool    _testingToken = false;
   String? _urlStatus;
-  String? _tokenStatus;
-
-  // ── Reyeah Cloud ─────────────────────────────────────────────────────────
-  late final TextEditingController _vmBaseUrlCtrl;
-  late final TextEditingController _vmAppIdCtrl;
-  late final TextEditingController _vmAppSecretCtrl;
-  late final TextEditingController _vmMachineNoCtrl;
-  bool    _obscureSecret  = true;
-  bool    _testingReyeah  = false;
-  String? _reyeahStatus;  // null=idle, '' = ok, 'msg' = error
 
   @override
   void initState() {
     super.initState();
-    _mode           = widget.initialMode.isEmpty ? 'reyeah' : widget.initialMode;
-    _urlCtrl        = TextEditingController(text: widget.initialUrl);
-    _mgmtTokenCtrl  = TextEditingController(text: widget.initialManagementToken);
-    _vmBaseUrlCtrl  = TextEditingController(
-        text: widget.initialVmBaseUrl.isNotEmpty
-            ? widget.initialVmBaseUrl
-            : 'https://4020y425z1.uicp.fun');
-    _vmAppIdCtrl    = TextEditingController(text: widget.initialVmAppId);
-    _vmAppSecretCtrl = TextEditingController(text: widget.initialVmAppSecret);
-    _vmMachineNoCtrl = TextEditingController(text: widget.initialVmMachineNo);
+    _urlCtrl = TextEditingController(text: widget.initialUrl);
   }
 
   @override
   void dispose() {
     _urlCtrl.dispose();
-    _mgmtTokenCtrl.dispose();
-    _vmBaseUrlCtrl.dispose();
-    _vmAppIdCtrl.dispose();
-    _vmAppSecretCtrl.dispose();
-    _vmMachineNoCtrl.dispose();
     super.dispose();
   }
 
@@ -579,59 +537,15 @@ class _StepBackendState extends State<_StepBackend> {
     if (mounted) setState(() { _testingUrl = false; _urlStatus = err ?? ''; });
   }
 
-  Future<void> _testToken() async {
-    if (_mgmtTokenCtrl.text.trim().isEmpty) return;
-    setState(() { _testingToken = true; _tokenStatus = null; });
-    final err = await AppConfig.testLotteryToken(_urlCtrl.text, _mgmtTokenCtrl.text);
-    if (mounted) setState(() { _testingToken = false; _tokenStatus = err ?? ''; });
-  }
-
-  // ── Reyeah helpers ────────────────────────────────────────────────────────
-
-  Future<void> _testReyeah() async {
-    final appId     = _vmAppIdCtrl.text.trim();
-    final appSecret = _vmAppSecretCtrl.text.trim();
-    final machineNo = _vmMachineNoCtrl.text.trim();
-    if (appId.isEmpty || appSecret.isEmpty || machineNo.isEmpty) return;
-
-    setState(() { _testingReyeah = true; _reyeahStatus = null; });
-
-    // Guardar temporalmente para que ReyeahService las use
-    await AppConfig.saveReyeah(
-      baseUrl:   _vmBaseUrlCtrl.text.trim(),
-      appId:     appId,
-      appSecret: appSecret,
-      machineNo: machineNo,
-    );
-    await AppConfig.setBackendMode('reyeah');
-
-    final err = await ReyeahService.testCredentials();
-    if (mounted) setState(() { _testingReyeah = false; _reyeahStatus = err ?? ''; });
-  }
-
-  // ── canContinue ───────────────────────────────────────────────────────────
-
-  bool get _canContinue {
-    if (_mode == 'reyeah') {
-      // Con credenciales verificadas es ideal, pero permitir continuar
-      // si al menos App ID + Secret + Machine No. están escritos.
-      return _vmAppIdCtrl.text.trim().isNotEmpty &&
-             _vmAppSecretCtrl.text.trim().isNotEmpty &&
-             _vmMachineNoCtrl.text.trim().isNotEmpty;
-    }
-    // Solo se requiere URL verificada. El token es opcional — se puede
-    // configurar en cualquier momento desde el Admin Panel.
-    return _urlStatus == '';
-  }
+  bool get _canContinue => _urlStatus == '';
 
   _BackendConfig get _config => _BackendConfig(
-    backendMode:     _mode,
-    apiBaseUrl:      _urlCtrl.text.trim(),
-    managementToken: _mgmtTokenCtrl.text.trim(),
-    vmBaseUrl:       _vmBaseUrlCtrl.text.trim(),
-    vmAppId:         _vmAppIdCtrl.text.trim(),
-    vmAppSecret:     _vmAppSecretCtrl.text.trim(),
-    vmMachineNo:     _vmMachineNoCtrl.text.trim(),
+    backendMode: _mode,
+    apiBaseUrl:  _urlCtrl.text.trim(),
+    vmBaseUrl:   widget.initialVmBaseUrl,
+    vmAppId:     widget.initialVmAppId,
+    vmAppSecret: widget.initialVmAppSecret,
+    vmMachineNo: widget.initialVmMachineNo,
   );
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -640,133 +554,14 @@ class _StepBackendState extends State<_StepBackend> {
   Widget build(BuildContext context) {
     return _StepShell(
       title: 'Backend Connection',
-      subtitle: 'Choose how this kiosk connects to the cloud',
-      icon: Icons.cloud_outlined,
+      subtitle: 'Connect this kiosk to vms-cloud',
+      icon: Icons.dns_outlined,
       onNext: () => widget.onNext(_config),
       onBack: widget.onBack,
       nextEnabled: _canContinue,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Mode selector ──────────────────────────────────────────────
-          _buildModeSelector(),
-          const SizedBox(height: 28),
-          const Divider(color: Colors.white10),
-          const SizedBox(height: 24),
-
-          // ── Fields depending on mode ───────────────────────────────────
-          if (_mode == 'reyeah') _buildReyeahFields()
-          else                    _buildVmsCloudFields(),
-        ],
-      ),
+      child: _buildVmsCloudFields(),
     );
   }
-
-  // ── Mode selector widget ──────────────────────────────────────────────────
-
-  Widget _buildModeSelector() {
-    return Row(
-      children: [
-        Expanded(child: _ModeChip(
-          label: 'Reyeah Cloud',
-          sublabel: 'Direct machine API',
-          icon: Icons.cloud_outlined,
-          color: const Color(0xFF00BCD4),
-          selected: _mode == 'reyeah',
-          onTap: () => setState(() {
-            _mode = 'reyeah';
-            _reyeahStatus = null;
-          }),
-        )),
-        const SizedBox(width: 12),
-        Expanded(child: _ModeChip(
-          label: 'vms-cloud',
-          sublabel: 'VMFS own backend',
-          icon: Icons.dns_outlined,
-          color: const Color(0xFF007ACC),
-          selected: _mode == 'vmscloud',
-          onTap: () => setState(() {
-            _mode = 'vmscloud';
-            _urlStatus = null;
-            _tokenStatus = null;
-          }),
-        )),
-      ],
-    );
-  }
-
-  // ── Reyeah Cloud fields ───────────────────────────────────────────────────
-
-  Widget _buildReyeahFields() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _WizardField(
-          controller: _vmBaseUrlCtrl,
-          label: 'Base URL',
-          hint: 'https://4020y425z1.uicp.fun',
-          icon: Icons.link_rounded,
-          onChanged: (_) => setState(() => _reyeahStatus = null),
-        ),
-        const SizedBox(height: 20),
-        _WizardField(
-          controller: _vmAppIdCtrl,
-          label: 'App ID',
-          hint: 'Your Reyeah App ID',
-          icon: Icons.badge_outlined,
-          onChanged: (_) => setState(() => _reyeahStatus = null),
-        ),
-        const SizedBox(height: 20),
-        _WizardField(
-          controller: _vmAppSecretCtrl,
-          label: 'App Secret',
-          hint: '••••••••',
-          icon: Icons.key_outlined,
-          obscure: _obscureSecret,
-          onChanged: (_) => setState(() => _reyeahStatus = null),
-          suffix: IconButton(
-            icon: Icon(
-              _obscureSecret ? Icons.visibility_off : Icons.visibility,
-              color: Colors.white38, size: 18),
-            onPressed: () => setState(() => _obscureSecret = !_obscureSecret),
-          ),
-        ),
-        const SizedBox(height: 20),
-        _WizardField(
-          controller: _vmMachineNoCtrl,
-          label: 'Machine No.',
-          hint: 'e.g. 866903255700003',
-          icon: Icons.point_of_sale_outlined,
-          onChanged: (_) => setState(() => _reyeahStatus = null),
-          suffix: _TestButton(
-            testing: _testingReyeah,
-            status: _reyeahStatus,
-            label: 'Test',
-            onTap: _canTestReyeah ? _testReyeah : null,
-          ),
-        ),
-        if (_reyeahStatus != null) ...[
-          const SizedBox(height: 8),
-          if (_reyeahStatus == '')
-            _StatusChip(ok: true, message: 'Connected to Reyeah Cloud ✓')
-          else
-            _RawResponseBox(text: _reyeahStatus!),
-        ],
-        const SizedBox(height: 16),
-        const Text(
-          'Get your App ID, App Secret and Machine No. from\nyour Reyeah Cloud dashboard.',
-          style: TextStyle(color: Colors.white24, fontSize: 12, height: 1.6),
-        ),
-      ],
-    );
-  }
-
-  bool get _canTestReyeah =>
-      _vmAppIdCtrl.text.trim().isNotEmpty &&
-      _vmAppSecretCtrl.text.trim().isNotEmpty &&
-      _vmMachineNoCtrl.text.trim().isNotEmpty;
-
-  // ── vms-cloud fields ──────────────────────────────────────────────────────
 
   Widget _buildVmsCloudFields() {
     return Column(
@@ -777,7 +572,7 @@ class _StepBackendState extends State<_StepBackend> {
           label: 'API Base URL',
           hint: 'https://your-domain.com/api/v1',
           icon: Icons.link_rounded,
-          onChanged: (_) => setState(() { _urlStatus = null; _tokenStatus = null; }),
+          onChanged: (_) => setState(() => _urlStatus = null),
           suffix: _TestButton(
             testing: _testingUrl,
             status: _urlStatus,
@@ -791,53 +586,6 @@ class _StepBackendState extends State<_StepBackend> {
               ? 'Server reachable ✓'
               : _urlStatus!),
         ],
-        const SizedBox(height: 24),
-        // ── Management API Token (OPTIONAL) ───────────────────────────
-        Row(children: [
-          const Text('MANAGEMENT API TOKEN',
-              style: TextStyle(color: Colors.white38, fontSize: 11,
-                  fontWeight: FontWeight.w700, letterSpacing: 1)),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.orange.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
-            ),
-            child: const Text('Optional',
-                style: TextStyle(color: Colors.orange,
-                    fontSize: 9, fontWeight: FontWeight.w700)),
-          ),
-        ]),
-        const SizedBox(height: 8),
-        _WizardField(
-          controller: _mgmtTokenCtrl,
-          label: '',
-          hint: 'Bearer token for Admin Panel — skip to configure later',
-          icon: Icons.admin_panel_settings_outlined,
-          enabled: _urlStatus == '',
-          onChanged: (_) => setState(() => _tokenStatus = null),
-          suffix: _mgmtTokenCtrl.text.trim().isNotEmpty
-              ? _TestButton(
-                  testing: _testingToken,
-                  status: _tokenStatus,
-                  label: 'Verify',
-                  onTap: _urlStatus == '' ? _testToken : null,
-                )
-              : null,
-        ),
-        if (_tokenStatus != null) ...[
-          const SizedBox(height: 6),
-          _StatusChip(ok: _tokenStatus == '', message: _tokenStatus == ''
-              ? 'Token valid ✓'
-              : _tokenStatus!),
-        ],
-        const SizedBox(height: 10),
-        const Text(
-          'Leave blank to skip — set it later from Admin Settings\nto unlock the Admin Panel (dashboard, inventory, orders).',
-          style: TextStyle(color: Colors.white24, fontSize: 12, height: 1.6),
-        ),
       ],
     );
   }
@@ -997,73 +745,6 @@ class _StepMachineState extends State<_StepMachine> {
                       ),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// _ModeChip — selector de modo de backend en el wizard
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ModeChip extends StatelessWidget {
-  final String label;
-  final String sublabel;
-  final IconData icon;
-  final Color color;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _ModeChip({
-    required this.label,
-    required this.sublabel,
-    required this.icon,
-    required this.color,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: BoxDecoration(
-          color: selected
-              ? color.withValues(alpha: 0.12)
-              : const Color(0xFF0D1A2B),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: selected ? color : Colors.white12,
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: selected ? color : Colors.white38, size: 22),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label,
-                      style: TextStyle(
-                        color: selected ? color : Colors.white54,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      )),
-                  Text(sublabel,
-                      style: const TextStyle(
-                          color: Colors.white24, fontSize: 10)),
-                ],
-              ),
-            ),
-            if (selected)
-              Icon(Icons.check_circle_rounded, color: color, size: 18),
           ],
         ),
       ),

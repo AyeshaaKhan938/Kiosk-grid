@@ -281,6 +281,7 @@ static Uint8List buildResetVmcFrame() => _buildFrame(0xA1, [0xFF]);
     bool simulateSuccess = false,
     String paymentMethod = 'cash',
     String? paymentReference,
+    double? amount,
     void Function(DispenseStatus)? onProgress,
   }) {
     return _withDispenseGate(() => _dispenseProductImpl(
@@ -290,6 +291,7 @@ static Uint8List buildResetVmcFrame() => _buildFrame(0xA1, [0xFF]);
           simulateSuccess: simulateSuccess,
           paymentMethod: paymentMethod,
           paymentReference: paymentReference,
+          amount: amount,
           onProgress: onProgress,
         ));
   }
@@ -301,6 +303,7 @@ static Uint8List buildResetVmcFrame() => _buildFrame(0xA1, [0xFF]);
     bool simulateSuccess = false,
     String paymentMethod = 'cash',
     String? paymentReference,
+    double? amount,
     void Function(DispenseStatus)? onProgress,
   }) async {
     onProgress?.call(DispenseStatus.sending);
@@ -325,7 +328,18 @@ static Uint8List buildResetVmcFrame() => _buildFrame(0xA1, [0xFF]);
             }
             break;
           case 'afen':
-            // Reyeah UART motor + AFEN FunCode cloud feedback.
+            // Authorize vend on AFEN VMC, fire motor over UART, report result.
+            final price = amount != null ? amount.toStringAsFixed(2) : '0';
+            final auth = await AfenVmcService.identifyPassword(
+              slotNo: lineNumber,
+              price: price,
+              tradeNo: lotteryCode,
+            );
+            if (auth['Status']?.toString() != '0') {
+              errorMsg = auth['Err']?.toString() ??
+                  'AFEN vend authorization failed.';
+              break;
+            }
             physicalSuccess = await _sendDeliveryViaTty(
               lineNumber: lineNumber,
               onProgress: onProgress,
@@ -757,10 +771,52 @@ static Uint8List buildResetVmcFrame() => _buildFrame(0xA1, [0xFF]);
     }
 
     try {
-      final ok = await _sendDeliveryViaTty(
-        lineNumber: lineNumber,
-        onProgress: null,
-      );
+      bool ok = false;
+      String? errorMsg;
+
+      switch (AppConfig.hardwareProtocol) {
+        case 'tcn':
+          ok = await TcnSerialService.shipment(lineNumber);
+          errorMsg = ok ? null : 'TCN board did not confirm delivery.';
+          break;
+        case 'afen':
+          final tradeNo = 'test-${DateTime.now().millisecondsSinceEpoch}';
+          final auth = await AfenVmcService.identifyPassword(
+            slotNo: lineNumber,
+            price: '0.00',
+            tradeNo: tradeNo,
+          );
+          if (auth['Status']?.toString() != '0') {
+            return DispenseResult(
+              status: DispenseStatus.error,
+              errorMessage: auth['Err']?.toString() ??
+                  'AFEN vend authorization failed.',
+            );
+          }
+          ok = await _sendDeliveryViaTty(
+            lineNumber: lineNumber,
+            onProgress: null,
+          );
+          if (ok) {
+            try {
+              await AfenVmcService.deliveryFeedback(
+                tradeNo: tradeNo,
+                slotNo: lineNumber,
+                success: true,
+                amount: '0',
+              );
+            } catch (_) {}
+          }
+          errorMsg = ok ? null : 'VMC did not confirm delivery.';
+          break;
+        default:
+          ok = await _sendDeliveryViaTty(
+            lineNumber: lineNumber,
+            onProgress: null,
+          );
+          errorMsg = ok ? null : 'VMC did not confirm delivery.';
+      }
+
       if (ok) {
         // A verified vend should leave inventory consistent, just like a
         // real sale. Decrement the slot's stock in vms-cloud. This is
@@ -770,7 +826,7 @@ static Uint8List buildResetVmcFrame() => _buildFrame(0xA1, [0xFF]);
       }
       return DispenseResult(
         status: ok ? DispenseStatus.success : DispenseStatus.error,
-        errorMessage: ok ? null : 'VMC did not confirm delivery.',
+        errorMessage: errorMsg,
       );
     } on MissingPluginException {
       return const DispenseResult(

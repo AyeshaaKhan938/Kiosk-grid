@@ -47,6 +47,7 @@ class UpdateInfo {
 ///
 /// Flow:
 ///   1. [check] polls /api/v1/kiosk/update-check with our current versionCode
+///      and [AppConfig.machineNo] so vms-cloud can offer a per-machine APK.
 ///   2. If a newer version is offered, [downloadAndInstall] fetches it to a
 ///      temp file, then asks the native side (ApkInstallerChannel) to launch
 ///      the Android PackageInstaller intent.
@@ -73,11 +74,19 @@ class UpdateService {
     return info.version;
   }
 
-  /// Poll the backend for a newer version.
+  /// Poll the backend for a newer version assigned to this machine.
   static Future<UpdateInfo> check() async {
     final code = await currentVersionCode();
+    final machineNo = AppConfig.machineNo.trim();
+    final params = <String, String>{
+      'current_version_code': code.toString(),
+    };
+    if (machineNo.isNotEmpty) {
+      params['machine_no'] = machineNo;
+    }
+
     final url = Uri.parse('${AppConfig.apiBaseUrl}/kiosk/update-check')
-        .replace(queryParameters: {'current_version_code': code.toString()});
+        .replace(queryParameters: params);
 
     final response = await http
         .get(url, headers: {'Accept': 'application/json'})

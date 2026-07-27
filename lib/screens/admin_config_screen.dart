@@ -70,7 +70,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             icon: Icons.admin_panel_settings_rounded,
             label: 'Admin Panel',
             subtitle: AppConfig.managementToken.isNotEmpty
-                ? 'Dashboard, inventory, orders & lotteries'
+                ? 'Dashboard, inventory, orders & products'
                 : 'Requires Management Token — set it below',
             color: AppConfig.managementToken.isNotEmpty
                 ? const Color(0xFF7C3AED)
@@ -86,39 +86,36 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           _buildInfoCard(),
           const SizedBox(height: 20),
 
-          // ── Backend mode selector ──────────────────────────────────────
-          _buildSectionLabel('BACKEND MODE'),
+          // ── Cloud backend (machine management) ─────────────────────────
+          _buildSectionLabel('CLOUD BACKEND'),
           const SizedBox(height: 10),
-          _buildBackendModeSelector(),
+          _buildCloudBackendSection(),
           const SizedBox(height: 20),
 
-          // ── Reyeah credentials (solo cuando mode == reyeah) ───────────
-          if (AppConfig.backendMode == 'reyeah') ...[
-            _buildSectionLabel('REYEAH CLOUD CREDENTIALS'),
-            const SizedBox(height: 10),
-            _ReyeahCredentialsPanel(onSaved: () => setState(() {})),
-            const SizedBox(height: 20),
-          ],
+          // ── Physical dispense / motor control ──────────────────────────
+          _buildSectionLabel('DISPENSE HARDWARE'),
+          const SizedBox(height: 10),
+          _buildHardwareProtocolSelector(),
+          const SizedBox(height: 20),
 
-          // ── AFEN Open Platform + VMC (mode == afen) ─────────────────
-          if (AppConfig.backendMode == 'afen') ...[
-            _buildSectionLabel('AFEN OPEN PLATFORM'),
+          // ── AFEN VMC (when dispense hardware == afen) ─────────────────
+          if (AppConfig.hardwareProtocol == 'afen') ...[
+            _buildSectionLabel('AFEN VMC SETTINGS'),
             const SizedBox(height: 10),
             _AfenCredentialsPanel(onSaved: () => setState(() {})),
             const SizedBox(height: 20),
           ],
 
-          // ── TCN serial / coil settings (mode == tcn) ──────────────────
-          if (AppConfig.backendMode == 'tcn') ...[
+          // ── TCN serial / coil settings ────────────────────────────────
+          if (AppConfig.hardwareProtocol == 'tcn') ...[
             _buildSectionLabel('TCN SERIAL / COIL'),
             const SizedBox(height: 10),
             _TcnSettingsPanel(onSaved: () => setState(() {})),
             const SizedBox(height: 20),
           ],
 
-          // Sección: Acciones vms-cloud (vmscloud + tcn use Laravel catalog)
-          if (AppConfig.backendMode == 'vmscloud' ||
-              AppConfig.backendMode == 'tcn') ...[
+          // Sección: Acciones vms-cloud
+          if (AppConfig.backendMode == 'vmscloud') ...[
             _buildAction(
               icon: Icons.edit_outlined,
               label: 'Edit Configuration',
@@ -148,16 +145,18 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           _ManagementTokenPanel(onSaved: () => setState(() {})),
           const SizedBox(height: 20),
 
-          // ── Lottery Token (botón de sorteo) ───────────────────────────
-          _buildSectionLabel('LOTTERY'),
-          const SizedBox(height: 4),
-          const Text(
-            'Optional — enables the lottery draw button for customers.',
-            style: TextStyle(color: Colors.white38, fontSize: 11),
-          ),
-          const SizedBox(height: 10),
-          _LotteryTokenPanel(onSaved: () => setState(() {})),
-          const SizedBox(height: 20),
+          if (AppConfig.lotteryEnabled) ...[
+            // ── Lottery Token (customer draw button) ─────────────────────
+            _buildSectionLabel('LOTTERY'),
+            const SizedBox(height: 4),
+            const Text(
+              'Lottery draw is enabled for this machine.',
+              style: TextStyle(color: Colors.white38, fontSize: 11),
+            ),
+            const SizedBox(height: 10),
+            _LotteryTokenPanel(onSaved: () => setState(() {})),
+            const SizedBox(height: 20),
+          ],
 
           // ── Toggle: Simulate Dispense ──────────────────────────────────
           _buildSimulateToggle(),
@@ -173,95 +172,14 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
 
           // ── Toggle: Auto-upload logs ───────────────────────────────────
           _buildAutoUploadLogsToggle(),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
 
-          // ── Test USB connection ────────────────────────────────────────
-          _buildAction(
-            icon: Icons.usb_rounded,
-            label: 'Test USB Serial',
-            subtitle: 'Send Device ID request to the Control Board',
-            color: const Color(0xFF00BCD4),
-            onTap: _testUsb,
-          ),
-          const SizedBox(height: 12),
+          // ── Hardware-specific vend tools ───────────────────────────────
+          ..._buildHardwareVendActions(),
 
-          // ── Test Dispense Slot (fires real motor) ──────────────────────
-          _buildAction(
-            icon: Icons.local_shipping_rounded,
-            label: 'Test Dispense Slot',
-            subtitle:
-                'Fire a motor to verify hardware. No order created, no Ten Point Media validation.',
-            color: const Color(0xFF4CAF50),
-            onTap: _promptTestDispense,
-          ),
-          const SizedBox(height: 12),
-
-          // ── Reset VMC + Home Lift (CMD 0xA1) — elevator recovery ──────
-          _buildAction(
-            icon: Icons.home_repair_service_rounded,
-            label: 'Reset VMC / Home Lift',
-            subtitle: 'Sends CMD 0xA1 to fully reset the Reyeah control '
-                'board. On elevator machines this also drives the lift '
-                'platform back to its home (bottom) position. Use this '
-                'when the lift is parked at the wrong floor and dispenses '
-                'silently fail.',
-            color: const Color(0xFFEF5350),
-            onTap: _resetVmc,
-          ),
-          const SizedBox(height: 12),
-
-          // ── Clear board faults (CMD 0xA2) — admin recovery ─────────────
-          _buildAction(
-            icon: Icons.restart_alt_rounded,
-            label: 'Clear Board Faults',
-            subtitle: 'Sends 0xA2 to reset latched motor / sensor faults '
-                'on the Reyeah control board. Use this if a slot stopped '
-                'dispensing after an error.',
-            color: const Color(0xFFFF7043),
-            onTap: _clearBoardFaults,
-          ),
-          const SizedBox(height: 12),
-
-          // ── Calibrate Lift Platform (elevator machines only) ───────────
-          _buildAction(
-            icon: Icons.vertical_align_top_rounded,
-            label: 'Calibrate Lift Platform',
-            subtitle: 'Elevator machines only. Sends CMD 0x21 to teach '
-                'the VMC each floor\'s height — the lift will physically '
-                'run through every floor (~45 s). Run this once after '
-                'installing or servicing the lift; the VMC persists the result.',
-            color: const Color(0xFF8E24AA),
-            onTap: _calibrateLift,
-          ),
-          const SizedBox(height: 12),
-
-          _buildAction(
-            icon: Icons.height_rounded,
-            label: 'Lift Floor Heights',
-            subtitle: 'Read CMD 0x20 floor heights and set individual '
-                'floor values with CMD 0x21 using ${AppConfig.ttyPath}.',
-            color: const Color(0xFF8E24AA),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const VmcFloorHeightScreen()),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          _buildAction(
-            icon: Icons.receipt_long_rounded,
-            label: 'VMC Log',
-            subtitle: 'Request board logs with CMD 0x03, then read the '
-                '115200-baud log stream from ${AppConfig.ttyPath}.',
-            color: const Color(0xFF00BCD4),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const VmcLogScreen()),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // ── View Logs (field debugging) ────────────────────────────────
+          // ── General maintenance ──────────────────────────────────────
+          _buildSectionLabel('GENERAL'),
+          const SizedBox(height: 10),
           _buildAction(
             icon: Icons.article_outlined,
             label: 'View Logs',
@@ -276,7 +194,6 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           ),
           const SizedBox(height: 12),
 
-          // ── List USB Devices (debug — identify the connected USB chip) ──
           _buildAction(
             icon: Icons.device_hub_rounded,
             label: 'List USB Devices',
@@ -287,29 +204,6 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           ),
           const SizedBox(height: 12),
 
-          // ── List TTY Devices + pick the one wired to the motor ─────────
-          _buildAction(
-            icon: Icons.cable_rounded,
-            label: 'TTY Serial Port',
-            subtitle:
-                'Currently: ${AppConfig.ttyPath}. Tap to list available /dev/ttyS* devices and pick the one connected to the Reyeah board.',
-            color: const Color(0xFFFF6F00),
-            onTap: _pickTtyDevice,
-          ),
-          const SizedBox(height: 12),
-
-          // ── Delivery axis note ─────────────────────────────────────────
-          _buildAction(
-            icon: Icons.precision_manufacturing_rounded,
-            label: 'Delivery Axis',
-            subtitle: 'Fixed: side-push 0xFB. Every dispense sends '
-                'FF 00 55 41 02 <slot> FB <checksum>.',
-            color: const Color(0xFF9575CD),
-            onTap: _showDeliveryAxisInfo,
-          ),
-          const SizedBox(height: 12),
-
-          // ── Check for Updates (downloads + installs a new APK from vms-cloud)
           _buildAction(
             icon: Icons.system_update_rounded,
             label: 'Check for Updates',
@@ -320,7 +214,6 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           ),
           const SizedBox(height: 12),
 
-          // ── Exit Kiosk Mode (unlock device for maintenance) ────────────
           _buildAction(
             icon: Icons.lock_open_rounded,
             label: 'Exit Kiosk Mode',
@@ -366,9 +259,31 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     );
   }
 
-  // ── Backend mode selector ─────────────────────────────────────────────────
+  // ── Cloud backend (machine management) ───────────────────────────────────
 
-  Widget _buildBackendModeSelector() {
+  Widget _buildCloudBackendSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1A2B),
+        borderRadius: BorderRadius.circular(14),
+        border:
+            Border.all(color: const Color(0xFF007ACC).withValues(alpha: 0.2)),
+      ),
+      child: _buildModeOption(
+        value: 'vmscloud',
+        selected: AppConfig.backendMode == 'vmscloud',
+        onSelect: null,
+        label: 'vms-cloud (Laravel)',
+        subtitle: 'Machine management — products, orders & inventory',
+        icon: Icons.dns_outlined,
+        color: const Color(0xFF007ACC),
+      ),
+    );
+  }
+
+  // ── Physical dispense / motor control ────────────────────────────────────
+
+  Widget _buildHardwareProtocolSelector() {
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFF0D1A2B),
@@ -379,35 +294,216 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       child: Column(
         children: [
           _buildModeOption(
-            value: 'vmscloud',
-            label: 'vms-cloud (Laravel)',
-            subtitle: 'VMFS own backend — lottery, products & dispatch',
-            icon: Icons.dns_outlined,
-            color: const Color(0xFF007ACC),
-          ),
-          Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
-          _buildModeOption(
-            value: 'reyeah',
-            label: 'Reyeah Cloud',
-            subtitle: 'Direct Reyeah Cloud API — product catalog & orders',
-            icon: Icons.cloud_outlined,
+            value: 'uart',
+            selected: AppConfig.hardwareProtocol == 'uart',
+            onSelect: (value) async {
+              await AppConfig.setHardwareProtocol(value);
+              setState(() {});
+            },
+            label: 'Reyeah elevator (UART)',
+            subtitle: 'Reyeah control board — serial motor + lift/elevator recovery',
+            icon: Icons.settings_input_hdmi_outlined,
             color: const Color(0xFF00BCD4),
           ),
           Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
           _buildModeOption(
-            value: 'afen',
-            label: 'AFEN Open Platform',
-            subtitle: 'AFEN REST slots + FunCode VMC vend',
-            icon: Icons.hub_outlined,
-            color: const Color(0xFFFF9800),
+            value: 'tcn',
+            selected: AppConfig.hardwareProtocol == 'tcn',
+            onSelect: (value) async {
+              await AppConfig.setHardwareProtocol(value);
+              setState(() {});
+            },
+            label: 'TCN serial board',
+            subtitle: 'TCN Android coil commands — rotates slot motor to vend',
+            icon: Icons.settings_input_component_outlined,
+            color: const Color(0xFF9575CD),
           ),
           Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
           _buildModeOption(
-            value: 'tcn',
-            label: 'TCN Machine',
-            subtitle: 'vms-cloud catalog + TCN serial coil dispense',
-            icon: Icons.settings_input_component_outlined,
-            color: const Color(0xFF9575CD),
+            value: 'afen',
+            selected: AppConfig.hardwareProtocol == 'afen',
+            onSelect: (value) async {
+              await AppConfig.setHardwareProtocol(value);
+              setState(() {});
+            },
+            label: 'AFEN VMC',
+            subtitle: 'AFEN authorize + UART motor + delivery feedback',
+            icon: Icons.hub_outlined,
+            color: const Color(0xFFFF9800),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Vend-specific admin tools — only the actions relevant to the selected
+  /// dispense hardware (Reyeah UART, TCN, or AFEN).
+  List<Widget> _buildHardwareVendActions() {
+    final protocol = AppConfig.hardwareProtocol;
+    final testSubtitle = switch (protocol) {
+      'tcn' =>
+        'Fire a TCN coil command for the slot. No order created in vms-cloud.',
+      'afen' =>
+        'Authorize on AFEN VMC, fire UART motor, send delivery feedback. No order.',
+      _ =>
+        'Fire the Reyeah UART motor for the slot. No order created in vms-cloud.',
+    };
+
+    final widgets = <Widget>[
+      _buildSectionLabel(
+        switch (protocol) {
+          'tcn' => 'TCN VEND',
+          'afen' => 'AFEN VEND',
+          _ => 'REYEAH / UART VEND',
+        },
+      ),
+      const SizedBox(height: 10),
+      _buildAction(
+        icon: Icons.local_shipping_rounded,
+        label: 'Test Dispense Slot',
+        subtitle: testSubtitle,
+        color: const Color(0xFF4CAF50),
+        onTap: _promptTestDispense,
+      ),
+      const SizedBox(height: 12),
+      _buildAction(
+        icon: Icons.cable_rounded,
+        label: 'TTY Serial Port',
+        subtitle:
+            'Currently: ${AppConfig.ttyPath}. Pick the /dev/ttyS* port wired to the ${AppConfig.hardwareProtocolLabel} board.',
+        color: const Color(0xFFFF6F00),
+        onTap: _pickTtyDevice,
+      ),
+    ];
+
+    if (AppConfig.isReyeahUartVend) {
+      widgets.addAll([
+        const SizedBox(height: 12),
+        _buildAction(
+          icon: Icons.usb_rounded,
+          label: 'Test USB Serial',
+          subtitle: 'Send Device ID request to the Reyeah control board',
+          color: const Color(0xFF00BCD4),
+          onTap: _testUsb,
+        ),
+        const SizedBox(height: 12),
+        _buildAction(
+          icon: Icons.home_repair_service_rounded,
+          label: 'Reset VMC / Home Lift',
+          subtitle: 'Sends CMD 0xA1 to fully reset the Reyeah control '
+              'board. On elevator machines this also drives the lift '
+              'platform back to its home (bottom) position.',
+          color: const Color(0xFFEF5350),
+          onTap: _resetVmc,
+        ),
+        const SizedBox(height: 12),
+        _buildAction(
+          icon: Icons.restart_alt_rounded,
+          label: 'Clear Board Faults',
+          subtitle: 'Sends 0xA2 to reset latched motor / sensor faults '
+              'on the Reyeah control board.',
+          color: const Color(0xFFFF7043),
+          onTap: _clearBoardFaults,
+        ),
+        const SizedBox(height: 12),
+        _buildAction(
+          icon: Icons.vertical_align_top_rounded,
+          label: 'Calibrate Lift Platform',
+          subtitle: 'Elevator machines only. Sends CMD 0x21 to teach '
+              'the VMC each floor\'s height (~45 s).',
+          color: const Color(0xFF8E24AA),
+          onTap: _calibrateLift,
+        ),
+        const SizedBox(height: 12),
+        _buildAction(
+          icon: Icons.height_rounded,
+          label: 'Lift Floor Heights',
+          subtitle: 'Read CMD 0x20 floor heights and set values with CMD 0x21 '
+              'via ${AppConfig.ttyPath}.',
+          color: const Color(0xFF8E24AA),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const VmcFloorHeightScreen()),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildAction(
+          icon: Icons.receipt_long_rounded,
+          label: 'VMC Log',
+          subtitle: 'Request board logs with CMD 0x03 from ${AppConfig.ttyPath}.',
+          color: const Color(0xFF00BCD4),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const VmcLogScreen()),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildAction(
+          icon: Icons.precision_manufacturing_rounded,
+          label: 'Delivery Axis',
+          subtitle: 'Fixed: side-push 0xFB. Every dispense sends '
+              'FF 00 55 41 02 <slot> FB <checksum>.',
+          color: const Color(0xFF9575CD),
+          onTap: _showDeliveryAxisInfo,
+        ),
+      ]);
+    }
+
+    if (AppConfig.isTcnVend) {
+      widgets.addAll([
+        const SizedBox(height: 12),
+        _buildAction(
+          icon: Icons.elevator_rounded,
+          label: 'Clear TCN Elevator Fault',
+          subtitle: 'Send the configured TCN clear-fault command over serial.',
+          color: const Color(0xFF9575CD),
+          onTap: _clearTcnFault,
+        ),
+      ]);
+    }
+
+    widgets.add(const SizedBox(height: 20));
+    return widgets;
+  }
+
+  Future<void> _clearTcnFault() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1A2B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Clear TCN Fault',
+            style: TextStyle(color: Colors.white, fontSize: 17)),
+        content: FutureBuilder<bool>(
+          future: TcnSerialService.clearElevatorFault(),
+          builder: (_, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Row(
+                children: [
+                  CircularProgressIndicator(
+                      color: Color(0xFF9575CD), strokeWidth: 2),
+                  SizedBox(width: 16),
+                  Text('Sending clear-fault command…',
+                      style: TextStyle(color: Colors.white54)),
+                ],
+              );
+            }
+            final ok = snap.data == true;
+            return Text(
+              ok ? 'TCN board acknowledged clear-fault.' : 'No response or fault not cleared.',
+              style: TextStyle(
+                color: ok ? Colors.greenAccent : Colors.redAccent,
+                fontSize: 13,
+              ),
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child:
+                const Text('Close', style: TextStyle(color: Color(0xFF007ACC))),
           ),
         ],
       ),
@@ -416,17 +512,15 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
 
   Widget _buildModeOption({
     required String value,
+    required bool selected,
+    required void Function(String value)? onSelect,
     required String label,
     required String subtitle,
     required IconData icon,
     required Color color,
   }) {
-    final selected = AppConfig.backendMode == value;
     return InkWell(
-      onTap: () async {
-        await AppConfig.setBackendMode(value);
-        setState(() {});
-      },
+      onTap: onSelect == null ? null : () => onSelect(value),
       borderRadius: BorderRadius.circular(14),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
@@ -796,12 +890,11 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Enter the slot number (1-99) you want to test. The motor for '
-              'that slot will fire — a product will physically drop.\n\n'
-              'This bypasses Ten Point Media validation and does NOT create '
-              'an order or decrement stock in vms-cloud.',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
+              'that slot will fire using ${AppConfig.hardwareProtocolLabel}.\n\n'
+              'This does NOT create an order in vms-cloud.',
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
             ),
             const SizedBox(height: 14),
             TextField(
@@ -1391,15 +1484,13 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
   String _backendModeLabel() {
     switch (AppConfig.backendMode) {
       case 'reyeah':
-        return 'Reyeah Cloud';
-      case 'afen':
-        return 'AFEN Open Platform';
-      case 'tcn':
-        return 'TCN + vms-cloud';
+        return 'Reyeah Cloud (legacy)';
       default:
         return 'vms-cloud';
     }
   }
+
+  String _hardwareProtocolLabel() => AppConfig.hardwareProtocolLabel;
 
   Widget _buildInfoCard() {
     return Container(
@@ -1423,7 +1514,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _infoRow('Backend Mode', _backendModeLabel()),
+          _infoRow('Cloud Backend', _backendModeLabel()),
+          _infoRow('Dispense Hardware', _hardwareProtocolLabel()),
           if (AppConfig.backendMode == 'reyeah') ...[
             _infoRow('Reyeah Machine', AppConfig.vmMachineNo),
             _infoRow(
@@ -1431,17 +1523,6 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                 AppConfig.vmAppId.isNotEmpty
                     ? '${AppConfig.vmAppId.substring(0, AppConfig.vmAppId.length.clamp(0, 8))}…'
                     : '—'),
-          ] else if (AppConfig.backendMode == 'afen') ...[
-            _infoRow('AFEN Device ID', AppConfig.afenDeviceId),
-            _infoRow('AFEN VMC URL',
-                AppConfig.afenVmcUrl.isNotEmpty ? AppConfig.afenVmcUrl : '—'),
-            _infoRow('Open Platform URL',
-                AppConfig.afenBaseUrl.isNotEmpty ? AppConfig.afenBaseUrl : '—'),
-          ] else if (AppConfig.backendMode == 'tcn') ...[
-            _infoRow('Machine No.', AppConfig.machineNo),
-            _infoRow('TCN Serial Baud', '${AppConfig.tcnSerialBaud}'),
-            _infoRow('Board Type', AppConfig.tcnBoardType),
-            _infoRow('TTY Port', AppConfig.ttyPath),
           ] else ...[
             _infoRow('Machine No.', AppConfig.machineNo),
             _infoRow('API URL', AppConfig.apiBaseUrl),
@@ -1451,12 +1532,21 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                   ? '${AppConfig.managementToken.substring(0, 8)}…'
                   : '— not set',
             ),
-            _infoRow(
-              'Lottery Token',
-              AppConfig.lotteryToken.isNotEmpty
-                  ? '${AppConfig.lotteryToken.substring(0, 8)}…'
-                  : '— disabled',
-            ),
+            if (AppConfig.lotteryEnabled)
+              _infoRow(
+                'Lottery Token',
+                '${AppConfig.lotteryToken.substring(0, 8)}…',
+              ),
+          ],
+          if (AppConfig.hardwareProtocol == 'afen') ...[
+            _infoRow('AFEN Device ID', AppConfig.afenDeviceId),
+            _infoRow('AFEN VMC URL',
+                AppConfig.afenVmcUrl.isNotEmpty ? AppConfig.afenVmcUrl : '—'),
+          ],
+          if (AppConfig.hardwareProtocol == 'tcn') ...[
+            _infoRow('TCN Serial Baud', '${AppConfig.tcnSerialBaud}'),
+            _infoRow('Board Type', AppConfig.tcnBoardType),
+            _infoRow('TTY Port', AppConfig.ttyPath),
           ],
           _infoRow('Admin PIN', '••••'),
         ],
@@ -2759,7 +2849,7 @@ class _TcnSettingsPanelState extends State<_TcnSettingsPanel> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'TCN: product grid from vms-cloud, coil motor via TTY serial.',
+            'TCN coil motor via serial. Product catalog comes from vms-cloud.',
             style: TextStyle(color: Colors.white38, fontSize: 11),
           ),
           const SizedBox(height: 14),

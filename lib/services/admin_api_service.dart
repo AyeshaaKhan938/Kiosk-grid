@@ -180,15 +180,4 @@ class AdminApiService {
         .timeout(const Duration(seconds: 15));
     return _parse(res);
   }
-
-  // ── Lotteries (usa endpoint existente) ───────────────────────────────────
-
-  static Future<Map<String, dynamic>> getLotteries({int page = 1}) {
-    final uri = Uri.parse('$_base/product-lotteries')
-        .replace(queryParameters: {'page': '$page', 'per_page': '25'});
-    return http
-        .get(uri, headers: _headers)
-        .timeout(const Duration(seconds: 15))
-        .then(_parse);
-  }
 }

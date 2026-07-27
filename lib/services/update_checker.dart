@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'app_config.dart';
 import 'log_file_util.dart';
+import 'log_file_util.dart';
 import 'update_service.dart';
 import 'vending_machine_service.dart';
 
@@ -88,6 +89,13 @@ class UpdateChecker {
     try {
       info = await UpdateService.check();
       notifier.value = info.available ? info : null;
+      if (info.available) {
+        LogFileUtil.i('update.check.available', {
+          'machine_no': AppConfig.machineNo,
+          'version': info.versionName,
+          'code': info.versionCode.toString(),
+        });
+      }
     } catch (_) {
       // Network errors are expected when offline — don't clobber a
       // previously discovered update if this single attempt failed.

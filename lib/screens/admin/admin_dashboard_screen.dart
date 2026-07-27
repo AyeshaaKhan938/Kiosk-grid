@@ -44,7 +44,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final machine   = _data!['machine']   as Map<String, dynamic>;
     final today     = _data!['today']     as Map<String, dynamic>;
     final inventory = _data!['inventory'] as Map<String, dynamic>;
-    final lotteries = _data!['active_lotteries'] as int? ?? 0;
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -117,18 +116,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               color: cs.onSurface.withValues(alpha: 0.4),
             )),
           ]),
-          const SizedBox(height: 20),
-
-          // Active lotteries
-          _SectionLabel('Campaigns'),
-          const SizedBox(height: 10),
-          _StatCard(
-            label: 'Active Lotteries',
-            value: '$lotteries',
-            icon: Icons.confirmation_num_rounded,
-            color: Colors.purple,
-          ),
-
           const SizedBox(height: 32),
           Text(
             'Machine: ${AppConfig.machineNo}',

@@ -36,8 +36,11 @@ class AppConfig {
   // up to the kiosk and tap "Send to vms-cloud" by hand.
   static const _kAutoUploadLogs = 'cfg_auto_upload_logs';
 
-  // Backend mode: 'vmscloud' | 'reyeah' | 'afen' | 'tcn'
+  // Cloud backend: 'vmscloud' | 'reyeah' (legacy, hidden from UI)
   static const _kBackendMode = 'cfg_backend_mode';
+
+  // Physical dispense protocol: 'uart' | 'tcn' | 'afen'
+  static const _kHardwareProtocol = 'cfg_hardware_protocol';
 
   // AFEN Open Platform REST + VMC FunCode
   static const _kAfenBaseUrl = 'cfg_afen_base_url';
@@ -123,6 +126,15 @@ static String get ttyPathLift =>
     if (storedMgmt != null && _legacyManagementTokens.contains(storedMgmt)) {
       await p.remove(_kManagementToken);
     }
+
+    final legacyMode = p.getString(_kBackendMode);
+    if (legacyMode != null &&
+        (legacyMode == 'tcn' || legacyMode == 'afen')) {
+      if (p.getString(_kHardwareProtocol) == null) {
+        await p.setString(_kHardwareProtocol, legacyMode);
+      }
+      await p.setString(_kBackendMode, 'vmscloud');
+    }
   }
 
   // ── Getters ──────────────────────────────────────────────────────────────
@@ -152,6 +164,9 @@ static String get ttyPathLift =>
     if (stored != null && stored.isNotEmpty) return stored;
     return dotenv.env['LOTTERY_TOKEN'] ?? '';
   }
+
+  /// True when this machine has a lottery draw token configured.
+  static bool get lotteryEnabled => lotteryToken.isNotEmpty;
 
   /// Bearer token de gestión → habilita el Admin Panel (dashboard, inventario, órdenes).
   /// Completamente independiente del lottery draw token.
@@ -277,27 +292,41 @@ static String get ttyPathLift =>
 
   // ── Backend mode ─────────────────────────────────────────────────────────
 
-  /// 'vmscloud' → Laravel vms-cloud
-  /// 'reyeah'   → Reyeah Cloud
-  /// 'afen'     → AFEN Open Platform REST + FunCode VMC
-  /// 'tcn'      → vms-cloud catalog + TCN serial coil dispense
+  /// Cloud backend for machine management, catalog, and orders.
+  /// 'vmscloud' → Laravel vms-cloud (default)
+  /// 'reyeah'   → legacy Reyeah Cloud (hidden from admin UI)
   static String get backendMode =>
       _prefs?.getString(_kBackendMode) ?? 'vmscloud';
 
   static Future<void> setBackendMode(String mode) async =>
       _prefs?.setString(_kBackendMode, mode);
 
-  /// UART / serial protocol for physical coil dispense.
-  static String get hardwareProtocol {
-    switch (backendMode) {
+  /// Physical motor / coil dispense protocol after a purchase is verified.
+  ///   'uart' → standard control board over serial (Reyeah/VMFS frames)
+  ///   'tcn'  → TCN Android board serial commands
+  ///   'afen' → UART motor + AFEN FunCode VMC authorize/feedback
+  static String get hardwareProtocol =>
+      _prefs?.getString(_kHardwareProtocol) ?? 'uart';
+
+  static Future<void> setHardwareProtocol(String protocol) async =>
+      _prefs?.setString(_kHardwareProtocol, protocol);
+
+  static String get hardwareProtocolLabel {
+    switch (hardwareProtocol) {
       case 'tcn':
-        return 'tcn';
+        return 'TCN serial';
       case 'afen':
-        return 'afen';
+        return 'AFEN VMC';
       default:
-        return 'reyeah';
+        return 'Reyeah elevator (UART)';
     }
   }
+
+  static bool get isReyeahUartVend => hardwareProtocol == 'uart';
+
+  static bool get isTcnVend => hardwareProtocol == 'tcn';
+
+  static bool get isAfenVend => hardwareProtocol == 'afen';
 
   // ── AFEN Open Platform + VMC ─────────────────────────────────────────────
 

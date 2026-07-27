@@ -70,6 +70,7 @@ class _PurchaseResultScreenState extends State<PurchaseResultScreen> {
           simulateSuccess: AppConfig.simulateDispense,
           paymentMethod: p.paymentMethod,
           paymentReference: p.orderId,
+          amount: p.amount,
         );
 
         if (result.status == DispenseStatus.success) {

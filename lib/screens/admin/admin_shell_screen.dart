@@ -3,7 +3,6 @@ import 'admin_dashboard_screen.dart';
 import 'admin_inventory_screen.dart';
 import 'admin_orders_screen.dart';
 import 'admin_products_screen.dart';
-import 'admin_lotteries_screen.dart';
 import '../../services/admin_api_service.dart';
 
 /// Shell del panel admin con barra de navegación inferior.
@@ -23,7 +22,6 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
     AdminInventoryScreen(),
     AdminOrdersScreen(),
     AdminProductsScreen(),
-    AdminLotteriesScreen(),
   ];
 
   static const _items = [
@@ -31,7 +29,6 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
     BottomNavigationBarItem(icon: Icon(Icons.inventory_2_rounded),     label: 'Inventory'),
     BottomNavigationBarItem(icon: Icon(Icons.receipt_long_rounded),    label: 'Orders'),
     BottomNavigationBarItem(icon: Icon(Icons.storefront_rounded),      label: 'Products'),
-    BottomNavigationBarItem(icon: Icon(Icons.confirmation_num_rounded),label: 'Lotteries'),
   ];
 
   @override
@@ -96,7 +93,7 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
     );
   }
 
-  static const _titles = ['Dashboard', 'Inventory', 'Orders', 'Products', 'Lotteries'];
+  static const _titles = ['Dashboard', 'Inventory', 'Orders', 'Products'];
 }
 
 // ── No-token placeholder ─────────────────────────────────────────────────────

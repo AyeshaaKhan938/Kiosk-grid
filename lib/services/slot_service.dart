@@ -3,15 +3,12 @@ import 'package:http/http.dart' as http;
 import '../models/machine_slot.dart';
 import 'app_config.dart';
 import 'reyeah_service.dart';
-import 'afen_open_platform_service.dart';
 
 /// Obtiene el inventario de slots de la máquina.
 ///
-/// Selecciona automáticamente el backend según [AppConfig.backendMode]:
-///   'vmscloud' → GET /api/v1/machines/{machineNo}/slots  (backend Laravel)
-///   'reyeah'   → POST /open/getProductByPage             (Reyeah Cloud)
-///   'afen'     → POST /api/deviceSlot/getDeviceSlotList  (AFEN Open Platform)
-///   'tcn'      → GET /api/v1/machines/{machineNo}/slots  (vms-cloud catalog)
+/// Product catalog source — cloud backend only (dispense protocol is separate).
+///   'vmscloud' → GET /api/v1/machines/{machineNo}/slots
+///   'reyeah'   → legacy Reyeah Cloud catalog
 class SlotService {
   static String get _baseUrl   => AppConfig.apiBaseUrl;
   static String get _machineNo => AppConfig.machineNo;
@@ -22,9 +19,6 @@ class SlotService {
     switch (AppConfig.backendMode) {
       case 'reyeah':
         return ReyeahService.getProducts();
-      case 'afen':
-        return AfenOpenPlatformService.fetchSlots();
-      case 'tcn':
       case 'vmscloud':
       default:
         return _fetchFromVmsCloud(machineNo);

@@ -1,3 +1,5 @@
+import 'product_category.dart';
+
 /// Representa un slot físico de la vending machine con su producto e inventario.
 class MachineSlot {
   final int lineNumber;
@@ -83,20 +85,31 @@ class MachineSlotsResponse {
   final String machineNumber;
   final String machineName;
   final List<MachineSlot> slots;
+  /// Optional category catalog from vms-cloud (preferred over slot-derived names).
+  final List<ProductCategory> categories;
 
   const MachineSlotsResponse({
     required this.machineNumber,
     required this.machineName,
     required this.slots,
+    this.categories = const [],
   });
 
   factory MachineSlotsResponse.fromJson(Map<String, dynamic> json) {
+    final rawCats = json['categories'];
+    final categories = rawCats is List
+        ? rawCats
+            .map((e) => ProductCategory.fromJson(e as Map<String, dynamic>))
+            .toList()
+        : <ProductCategory>[];
+
     return MachineSlotsResponse(
       machineNumber: json['machine_number'] as String,
       machineName:   json['machine_name'] as String,
       slots: (json['slots'] as List)
           .map((s) => MachineSlot.fromJson(s as Map<String, dynamic>))
           .toList(),
+      categories: categories,
     );
   }
 }

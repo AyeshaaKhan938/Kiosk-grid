@@ -74,9 +74,6 @@ class _IdleScreenState extends State<IdleScreen>
   ];
 
   // ── Animaciones ───────────────────────────────────────────────────────────
-  late AnimationController _pulseCtrl;
-  late Animation<double>   _pulseAnim;
-
   late AnimationController _slideTextCtrl;
   late Animation<Offset>   _slideTextAnim;
 
@@ -86,14 +83,6 @@ class _IdleScreenState extends State<IdleScreen>
   void initState() {
     super.initState();
     _pageCtrl = PageController();
-
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1600),
-    )..repeat(reverse: true);
-    _pulseAnim = Tween<double>(begin: 0.4, end: 1.0).animate(
-      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
-    );
 
     _slideTextCtrl = AnimationController(
       vsync: this,
@@ -129,7 +118,6 @@ class _IdleScreenState extends State<IdleScreen>
     _adTimer?.cancel();
     _adRefreshTimer?.cancel();
     _pageCtrl.dispose();
-    _pulseCtrl.dispose();
     _slideTextCtrl.dispose();
     _shimmerCtrl.dispose();
     super.dispose();
@@ -227,7 +215,7 @@ class _IdleScreenState extends State<IdleScreen>
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Base layer: full-screen tappable region → lottery code entry
+            // Base layer: full-screen tappable region → product browser
             GestureDetector(
               onTap: _onTap,
               behavior: HitTestBehavior.opaque,
@@ -236,7 +224,7 @@ class _IdleScreenState extends State<IdleScreen>
 
             // Invisible admin entry — top-left 60x60 area, 5 taps within 2s.
             // Sits above the main GestureDetector so taps here don't open
-            // the lottery screen.
+            // the product browser.
             Positioned(
               top: 0,
               left: 0,
@@ -322,7 +310,7 @@ class _IdleScreenState extends State<IdleScreen>
             // ── Dots ──────────────────────────────────────────────────────
             if (slideCount > 1)
               Positioned(
-                bottom: 50, left: 0, right: 0,
+                bottom: 24, left: 0, right: 0,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: List.generate(slideCount, (i) => AnimatedContainer(
@@ -339,30 +327,6 @@ class _IdleScreenState extends State<IdleScreen>
                   )),
                 ),
               ),
-
-            // ── CTA pulsante ──────────────────────────────────────────────
-            Positioned(
-              bottom: 14, left: 0, right: 0,
-              child: FadeTransition(
-                opacity: _pulseAnim,
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.touch_app_rounded, color: Colors.white70, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      'TOUCH TO ENTER YOUR LOTTERY CODE',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 2.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
           ],
         );
   }
