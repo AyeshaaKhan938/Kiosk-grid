@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'screens/idle_screen.dart';
+import 'screens/kiosk_home_screen.dart';
 import 'screens/setup_wizard_screen.dart';
 import 'services/app_config.dart';
 import 'services/lottery_stock_service.dart';
@@ -66,12 +66,10 @@ Future<void> main() async {
   // discreet badge when one is ready.
   UpdateChecker.instance.startBackgroundChecks();
 
-  // Periodic CMD 0xE1 heartbeat against the Reyeah board — surfaces
-  // "board went silent / UART cable came loose" faster than waiting
-  // for a customer to attempt a vend and see nothing happen. Runs
-  // through the same single-flight gate the dispense flow uses, so
-  // it queues behind active dispenses instead of fighting on the TTY.
-  BoardHeartbeat.instance.start();
+  // Periodic CMD 0xE1 heartbeat — slot vending boards only.
+  if (!AppConfig.isBketCooler) {
+    BoardHeartbeat.instance.start();
+  }
 
   // Auto-ship log files to vms-cloud — first pass 60 s after launch,
   // then every 6 hours. The operator can flip this off via admin →
@@ -138,7 +136,7 @@ class _VMFSAppState extends State<VMFSApp> {
         );
       },
       home: AppConfig.isConfigured
-          ? const IdleScreen()
+          ? const KioskHomeScreen()
           : const SetupWizardScreen(),
     );
   }

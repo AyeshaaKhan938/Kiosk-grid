@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'app_config.dart';
+import '../models/cooler_session.dart';
 
 /// Resultado de validar un código de lotería.
 class LotteryCodeResult {
@@ -295,6 +296,150 @@ class ApiService {
     throw PurchaseOrderException(
       msg ?? 'Server error (${response.statusCode}). Please try again.',
     );
+  }
+
+  // ── AI cooler (SMG-S400 headless flow) ────────────────────────────────────
+
+  /// GET /api/v1/machines/{machineNo}/cooler-sessions/pending
+  ///
+  /// Returns a POS-paid session waiting for the kiosk to unlock the door,
+  /// or null when nothing is pending (204 / empty body / 404).
+  static Future<PendingCoolerSession?> fetchPendingCoolerSession() async {
+    final url = Uri.parse(
+      '$_baseUrl/machines/$_machineNo/cooler-sessions/pending',
+    );
+
+    final response = await http
+        .get(url, headers: {'Accept': 'application/json'})
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode == 204 || response.statusCode == 404) {
+      return null;
+    }
+
+    if (response.statusCode == 200) {
+      final body = response.body.trim();
+      if (body.isEmpty) return null;
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final session = PendingCoolerSession.fromJson(json);
+      if (session.orderId.isEmpty || session.sessionId.isEmpty) {
+        return null;
+      }
+      return session;
+    }
+
+    throw Exception('Pending session error: ${response.statusCode}');
+  }
+
+  /// POST /api/v1/cooler-sessions/ack
+  ///
+  /// Tells vms-cloud the kiosk claimed this session so it is not re-sent.
+  static Future<void> acknowledgeCoolerSession({
+    required String orderId,
+    required String sessionId,
+  }) async {
+    final url = Uri.parse('$_baseUrl/cooler-sessions/ack');
+    final response = await http
+        .post(
+          url,
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'machine_no': _machineNo,
+            'order_id': orderId,
+            'session_id': sessionId,
+          }),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) return;
+    if (response.statusCode == 404) return;
+    throw Exception('Ack failed: ${response.statusCode}');
+  }
+
+  /// POST /api/v1/cooler-sessions (multipart)
+  ///
+  /// Uploads host + sub camera MP4s after the customer closes the door.
+  static Future<void> uploadCoolerSession({
+    required String orderId,
+    required String sessionId,
+    required String hostVideoPath,
+    required String subVideoPath,
+  }) async {
+    final url = Uri.parse('$_baseUrl/cooler-sessions');
+    final request = http.MultipartRequest('POST', url)
+      ..fields['machine_no'] = _machineNo
+      ..fields['order_id'] = orderId
+      ..fields['session_id'] = sessionId
+      ..files.add(await http.MultipartFile.fromPath(
+        'host_video',
+        hostVideoPath,
+        filename: 'host.mp4',
+      ))
+      ..files.add(await http.MultipartFile.fromPath(
+        'sub_video',
+        subVideoPath,
+        filename: 'sub.mp4',
+      ));
+
+    final streamed = await request.send().timeout(const Duration(minutes: 3));
+    final response = await http.Response.fromStream(streamed);
+
+    if (response.statusCode >= 200 && response.statusCode < 300) return;
+
+    final body = _tryDecode(response.body);
+    throw Exception(
+      body?['message']?.toString() ??
+          'Upload failed (${response.statusCode}).',
+    );
+  }
+
+  /// POST /api/v1/cooler-sessions/failed
+  static Future<void> reportCoolerSessionFailure({
+    required String orderId,
+    required String sessionId,
+    required String error,
+  }) async {
+    final url = Uri.parse('$_baseUrl/cooler-sessions/failed');
+    try {
+      await http
+          .post(
+            url,
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'machine_no': _machineNo,
+              'order_id': orderId,
+              'session_id': sessionId,
+              'error': error,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+    } catch (_) {
+      // Best-effort.
+    }
+  }
+
+  /// GET /api/v1/orders/{orderId}
+  ///
+  /// Poll until status is `completed`, `failed`, or `cancelled`.
+  static Future<CoolerOrderStatus> fetchOrderStatus(String orderId) async {
+    final url = Uri.parse('$_baseUrl/orders/$orderId');
+
+    final response = await http
+        .get(url, headers: {'Accept': 'application/json'})
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      return CoolerOrderStatus.fromJson(body);
+    }
+
+    throw Exception('Order status error: ${response.statusCode}');
   }
 }
 

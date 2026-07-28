@@ -5,7 +5,7 @@ import 'package:flutter/semantics.dart';
 import '../services/app_config.dart';
 import '../services/purchase_service.dart';
 import '../services/vending_machine_service.dart';
-import 'idle_screen.dart';
+import 'kiosk_home_screen.dart';
 
 /// Post-purchase dispense screen — verifies payment already happened,
 /// fires the vend motor for each purchased slot, shows thank-you.
@@ -46,6 +46,12 @@ class _PurchaseResultScreenState extends State<PurchaseResultScreen> {
         _phase = _Phase.error;
         _errorMsg = 'No items to dispense.';
       });
+      return;
+    }
+
+    // AI cooler: one door session for the whole cart (not per-slot motors).
+    if (AppConfig.isBketCooler) {
+      await _runBketCoolerSession(purchases);
       return;
     }
 
@@ -105,10 +111,56 @@ class _PurchaseResultScreenState extends State<PurchaseResultScreen> {
     }
   }
 
+  Future<void> _runBketCoolerSession(List<PurchaseResult> purchases) async {
+    final sessionId = purchases.first.orderId;
+    setState(() {
+      _statusMsg =
+          'Unlocking door — open the cooler, take your items, then close the door.';
+    });
+    SemanticsService.announce(_statusMsg, TextDirection.ltr);
+
+    try {
+      final result = await VendingMachineService.dispenseProduct(
+        lineNumber: purchases.first.slot.lineNumber,
+        lotteryCode: sessionId,
+        machineNo: AppConfig.machineNo,
+        simulateSuccess: AppConfig.simulateDispense,
+        paymentMethod: purchases.first.paymentMethod,
+        paymentReference: sessionId,
+        amount: purchases.fold<double>(0, (sum, p) => sum + p.amount),
+      );
+
+      if (!mounted) return;
+
+      if (result.status == DispenseStatus.success) {
+        _dispensed = purchases.length;
+        SemanticsService.announce(
+          'Thank you. Please collect your items from the cooler.',
+          TextDirection.ltr,
+        );
+        setState(() => _phase = _Phase.success);
+        _returnTimer = Timer(const Duration(seconds: 8), _goIdle);
+      } else {
+        setState(() {
+          _phase = _Phase.error;
+          _errorMsg = result.errorMessage ??
+              'Cooler session failed. Please contact staff for a refund.';
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _phase = _Phase.error;
+        _errorMsg =
+            'Cooler session failed. Please contact staff for a refund.';
+      });
+    }
+  }
+
   void _goIdle() {
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const IdleScreen()),
+      MaterialPageRoute(builder: (_) => const KioskHomeScreen()),
       (_) => false,
     );
   }
@@ -177,7 +229,9 @@ class _PurchaseResultScreenState extends State<PurchaseResultScreen> {
       case _Phase.dispensing:
         return _statusMsg;
       case _Phase.success:
-        return 'Please collect your item${_dispensed > 1 ? 's' : ''} from the tray below.';
+        return AppConfig.isBketCooler
+            ? 'Please collect your item${_dispensed > 1 ? 's' : ''} from the cooler.'
+            : 'Please collect your item${_dispensed > 1 ? 's' : ''} from the tray below.';
       case _Phase.partial:
       case _Phase.error:
         return _errorMsg;

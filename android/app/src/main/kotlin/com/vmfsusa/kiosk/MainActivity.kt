@@ -199,6 +199,9 @@ class MainActivity : FlutterActivity() {
         // /dev/ttyS* serial bridge — talks to the Reyeah Control Board directly.
         TtySerialChannel(flutterEngine)
 
+        // SMG-S400 / BKX16 AI cooler — electromagnetic lock + dual cameras.
+        BketCoolerChannel(applicationContext, flutterEngine)
+
         // Remote APK self-update — installs an APK downloaded from vms-cloud.
         ApkInstallerChannel(applicationContext, flutterEngine)
 

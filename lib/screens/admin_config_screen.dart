@@ -6,6 +6,7 @@ import '../services/app_config.dart';
 import '../services/kiosk_lockdown.dart';
 import '../services/reyeah_service.dart';
 import '../services/afen_vmc_service.dart';
+import '../services/bket_cooler_service.dart';
 import '../services/tcn_serial_service.dart';
 import '../services/tty_serial.dart';
 import '../services/update_service.dart';
@@ -331,6 +332,20 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             icon: Icons.hub_outlined,
             color: const Color(0xFFFF9800),
           ),
+          Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
+          _buildModeOption(
+            value: 'bket',
+            selected: AppConfig.hardwareProtocol == 'bket',
+            onSelect: (value) async {
+              await AppConfig.setHardwareProtocol(value);
+              setState(() {});
+            },
+            label: 'AI cooler (SMG-S400 / BKX16)',
+            subtitle:
+                'Vision smart cooler — unlock door, record cameras, wait for close',
+            icon: Icons.kitchen_outlined,
+            color: const Color(0xFF26A69A),
+          ),
         ],
       ),
     );
@@ -345,6 +360,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         'Fire a TCN coil command for the slot. No order created in vms-cloud.',
       'afen' =>
         'Authorize on AFEN VMC, fire UART motor, send delivery feedback. No order.',
+      'bket' =>
+        'Record cameras, unlock door, wait for customer to close the door.',
       _ =>
         'Fire the Reyeah UART motor for the slot. No order created in vms-cloud.',
     };
@@ -354,26 +371,53 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         switch (protocol) {
           'tcn' => 'TCN VEND',
           'afen' => 'AFEN VEND',
+          'bket' => 'AI COOLER',
           _ => 'REYEAH / UART VEND',
         },
       ),
       const SizedBox(height: 10),
-      _buildAction(
-        icon: Icons.local_shipping_rounded,
-        label: 'Test Dispense Slot',
-        subtitle: testSubtitle,
-        color: const Color(0xFF4CAF50),
-        onTap: _promptTestDispense,
-      ),
-      const SizedBox(height: 12),
-      _buildAction(
-        icon: Icons.cable_rounded,
-        label: 'TTY Serial Port',
-        subtitle:
-            'Currently: ${AppConfig.ttyPath}. Pick the /dev/ttyS* port wired to the ${AppConfig.hardwareProtocolLabel} board.',
-        color: const Color(0xFFFF6F00),
-        onTap: _pickTtyDevice,
-      ),
+      if (protocol == 'bket') ...[
+        _buildAction(
+          icon: Icons.lock_open_rounded,
+          label: 'Test Unlock Door',
+          subtitle: 'Pulse electromagnetic lock 1 on the cooler cabinet.',
+          color: const Color(0xFF26A69A),
+          onTap: _testBketUnlock,
+        ),
+        const SizedBox(height: 12),
+        _buildAction(
+          icon: Icons.videocam_rounded,
+          label: 'Test Cooler Session',
+          subtitle: testSubtitle,
+          color: const Color(0xFF4CAF50),
+          onTap: _testBketSession,
+        ),
+        const SizedBox(height: 12),
+        _buildAction(
+          icon: Icons.info_outline_rounded,
+          label: 'Cooler Hardware Status',
+          subtitle: 'Door, lock, and camera state from the BKX SDK.',
+          color: const Color(0xFF00BCD4),
+          onTap: _showBketStatus,
+        ),
+      ] else ...[
+        _buildAction(
+          icon: Icons.local_shipping_rounded,
+          label: 'Test Dispense Slot',
+          subtitle: testSubtitle,
+          color: const Color(0xFF4CAF50),
+          onTap: _promptTestDispense,
+        ),
+        const SizedBox(height: 12),
+        _buildAction(
+          icon: Icons.cable_rounded,
+          label: 'TTY Serial Port',
+          subtitle:
+              'Currently: ${AppConfig.ttyPath}. Pick the /dev/ttyS* port wired to the ${AppConfig.hardwareProtocolLabel} board.',
+          color: const Color(0xFFFF6F00),
+          onTap: _pickTtyDevice,
+        ),
+      ],
     ];
 
     if (AppConfig.isReyeahUartVend) {
@@ -862,6 +906,85 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             onPressed: () => Navigator.pop(context),
             child:
                 const Text('Close', style: TextStyle(color: Color(0xFF007ACC))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── AI cooler (BKX16 / SMG-S400) ─────────────────────────────────────────
+
+  Future<void> _testBketUnlock() async {
+    final ok = await BketCoolerService.testUnlock();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok ? 'Door unlock command sent.' : 'Unlock failed — check tablet logs.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _testBketSession() async {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        backgroundColor: Color(0xFF0D1A2B),
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                'Cooler session running…\nOpen the door, then close it.',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final result = await VendingMachineService.testDispenseSlot(1);
+
+    if (!mounted) return;
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.status == DispenseStatus.success
+              ? 'Cooler test session completed.'
+              : (result.errorMessage ?? 'Cooler test session failed.'),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showBketStatus() async {
+    final status = await BketCoolerService.getStatus();
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1A2B),
+        title: const Text('AI Cooler Status',
+            style: TextStyle(color: Colors.white)),
+        content: Text(
+          'Initialized: ${status.initialized}\n'
+          'Door open: ${status.doorOpen}\n'
+          'Lock open: ${status.lockOpen}\n'
+          'Host camera online: ${status.hostCameraOnline}\n'
+          'Sub camera online: ${status.subCameraOnline}\n'
+          'Camera SDK: ${status.cameraSdkVersion ?? 'unknown'}',
+          style: const TextStyle(color: Colors.white70, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
           ),
         ],
       ),

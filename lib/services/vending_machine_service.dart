@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'admin_api_service.dart';
 import 'app_config.dart';
 import 'afen_vmc_service.dart';
+import 'bket_cooler_service.dart';
 import 'dispense_wake_lock.dart';
 import 'log_file_util.dart';
 import 'serial_frame_assembler.dart';
@@ -355,6 +356,15 @@ static Uint8List buildResetVmcFrame() => _buildFrame(0xA1, [0xFF]);
               } catch (_) {}
             } else {
               errorMsg = 'VMC did not confirm delivery.';
+            }
+            break;
+          case 'bket':
+            physicalSuccess = await _runBketShoppingSession(
+              sessionId: lotteryCode,
+              onProgress: onProgress,
+            );
+            if (!physicalSuccess) {
+              errorMsg = 'AI cooler session did not complete.';
             }
             break;
           default:
@@ -809,6 +819,11 @@ static Uint8List buildResetVmcFrame() => _buildFrame(0xA1, [0xFF]);
           }
           errorMsg = ok ? null : 'VMC did not confirm delivery.';
           break;
+        case 'bket':
+          final sessionId = 'test-${DateTime.now().millisecondsSinceEpoch}';
+          ok = await _runBketShoppingSession(sessionId: sessionId);
+          errorMsg = ok ? null : 'AI cooler session failed.';
+          break;
         default:
           ok = await _sendDeliveryViaTty(
             lineNumber: lineNumber,
@@ -863,6 +878,40 @@ static Uint8List buildResetVmcFrame() => _buildFrame(0xA1, [0xFF]);
     } catch (e) {
       LogFileUtil.e('test_dispense.stock.failed',
           extra: {'slot': lineNumber.toString()}, error: e.toString());
+    }
+  }
+
+  static Future<bool> _runBketShoppingSession({
+    required String sessionId,
+    void Function(DispenseStatus)? onProgress,
+  }) async {
+    if (kIsWeb) return false;
+
+    onProgress?.call(DispenseStatus.sending);
+    LogFileUtil.i('bket.session.start', {'sessionId': sessionId});
+
+    try {
+      await BketCoolerService.initialize();
+      final result = await BketCoolerService.startShoppingSession(
+        sessionId: sessionId,
+        timeoutSec: AppConfig.bketDoorTimeoutSec,
+      );
+
+      LogFileUtil.i('bket.session.complete', {
+        'sessionId': sessionId,
+        'success': result.success.toString(),
+        'hostVideo': result.hostVideoPath ?? '',
+        'subVideo': result.subVideoPath ?? '',
+      });
+
+      onProgress?.call(
+        result.success ? DispenseStatus.waitingConfirm : DispenseStatus.error,
+      );
+      return result.success;
+    } catch (e, st) {
+      LogFileUtil.e('bket.session.failed', error: e, stack: st);
+      onProgress?.call(DispenseStatus.error);
+      return false;
     }
   }
 

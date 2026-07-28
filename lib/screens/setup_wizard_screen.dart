@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import '../services/app_config.dart';
 import '../services/kiosk_lockdown.dart';
 import '../widgets/onscreen_keypad.dart';
-import 'idle_screen.dart';
+import 'kiosk_home_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VMFS Setup Wizard — aparece una sola vez al instalar la app.
@@ -128,7 +128,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
     } else {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const IdleScreen()),
+        MaterialPageRoute(builder: (_) => const KioskHomeScreen()),
       );
     }
   }

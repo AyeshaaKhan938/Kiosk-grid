@@ -57,6 +57,9 @@ class AppConfig {
   static const _kTcnBoardType = 'cfg_tcn_board_type'; // 'new' | 'old'
   static const _kTcnClearFaultCommand = 'cfg_tcn_clear_fault_cmd';
 
+  // SMG-S400 / BKX16 AI cooler (door lock + vision cameras)
+  static const _kBketDoorTimeoutSec = 'cfg_bket_door_timeout_sec';
+
   // Reyeah Cloud credentials
   static const _kVmBaseUrl = 'cfg_vm_base_url';
   static const _kVmAppId = 'cfg_vm_app_id';
@@ -302,9 +305,10 @@ static String get ttyPathLift =>
       _prefs?.setString(_kBackendMode, mode);
 
   /// Physical motor / coil dispense protocol after a purchase is verified.
-  ///   'uart' → standard control board over serial (Reyeah/VMFS frames)
-  ///   'tcn'  → TCN Android board serial commands
-  ///   'afen' → UART motor + AFEN FunCode VMC authorize/feedback
+  ///   'uart'  → standard control board over serial (Reyeah/VMFS frames)
+  ///   'tcn'   → TCN Android board serial commands
+  ///   'afen'  → UART motor + AFEN FunCode VMC authorize/feedback
+  ///   'bket'  → SMG-S400 AI cooler — door unlock + dual-camera session
   static String get hardwareProtocol =>
       _prefs?.getString(_kHardwareProtocol) ?? 'uart';
 
@@ -317,6 +321,8 @@ static String get ttyPathLift =>
         return 'TCN serial';
       case 'afen':
         return 'AFEN VMC';
+      case 'bket':
+        return 'AI cooler (BKX16 / SMG-S400)';
       default:
         return 'Reyeah elevator (UART)';
     }
@@ -327,6 +333,15 @@ static String get ttyPathLift =>
   static bool get isTcnVend => hardwareProtocol == 'tcn';
 
   static bool get isAfenVend => hardwareProtocol == 'afen';
+
+  static bool get isBketCooler => hardwareProtocol == 'bket';
+
+  /// Max seconds to wait for the customer to close the cooler door.
+  static int get bketDoorTimeoutSec =>
+      _prefs?.getInt(_kBketDoorTimeoutSec) ?? 300;
+
+  static Future<void> setBketDoorTimeoutSec(int seconds) async =>
+      _prefs?.setInt(_kBketDoorTimeoutSec, seconds.clamp(30, 900));
 
   // ── AFEN VMC (motor / FunCode only — catalog is vms-cloud) ───────────────
 

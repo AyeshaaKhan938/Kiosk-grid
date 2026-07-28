@@ -105,3 +105,9 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // BKX16/BKX18 camera + electromagnetic lock SDKs (SMG-S400 AI cooler).
+    implementation("com.alibaba:fastjson:1.2.83")
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
+}
