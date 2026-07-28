@@ -68,15 +68,15 @@ class BketCoolerChannel(
         }
 
     private val cameraCallback = object : BketCameraControlIface {
-        override fun onInfoHostVideoFile(fileName: String?) {
-            if (!fileName.isNullOrBlank()) {
+        override fun onInfoHostVideoFile(fileName: String?, isEnd: Boolean) {
+            if (!fileName.isNullOrBlank() && isEnd) {
                 hostVideoPath.set(fileName)
                 Log.i(TAG, "host video ready: $fileName")
             }
         }
 
-        override fun onInfoSubVideoFile(fileName: String?) {
-            if (!fileName.isNullOrBlank()) {
+        override fun onInfoSubVideoFile(fileName: String?, isEnd: Boolean) {
+            if (!fileName.isNullOrBlank() && isEnd) {
                 subVideoPath.set(fileName)
                 Log.i(TAG, "sub video ready: $fileName")
             }
@@ -90,12 +90,16 @@ class BketCoolerChannel(
             Log.d(TAG, "sub pic: $fileName")
         }
 
-        override fun onInfoOpenHostCameraStatus(status: Int) {
+        override fun onInfoHostCameraStatus(status: Int) {
             Log.d(TAG, "host camera status: $status")
         }
 
-        override fun onInfoOpenSubCameraStatus(status: Int) {
+        override fun onInfoSubCameraStatus(status: Int) {
             Log.d(TAG, "sub camera status: $status")
+        }
+
+        override fun onInfoCameraInitial(result: Int) {
+            Log.d(TAG, "camera initial: $result")
         }
     }
 
