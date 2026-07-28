@@ -61,10 +61,10 @@ class BketCoolerChannel(
     private val subVideoPath = AtomicReference<String?>(null)
 
     private val doorStatusCallback =
-        BketLockAdapter.LockDoorStatusIface { door1, _, lockStatus, _ ->
-            doorOpen = door1 == 1
-            lockOpen = lockStatus == 1
-            Log.d(TAG, "door callback door1=$door1 lock=$lockStatus")
+        BketLockAdapter.LockDoorStatusIface { lock, door, _, _ ->
+            lockOpen = lock == 1
+            doorOpen = door == 1
+            Log.d(TAG, "door callback lock=$lock door=$door")
         }
 
     private val cameraCallback = object : BketCameraControlIface {
@@ -301,9 +301,11 @@ class BketCoolerChannel(
 
     private fun pollDoorStatus(lock: BketLockAdapter) {
         try {
-            val status = lock.getDoorAndLockStatus()
-            doorOpen = (status and 0x01) != 0
-            lockOpen = (status and 0x02) != 0
+            val status = lock.getDoorAndLockStatus(0) ?: return
+            if (status.size >= 2) {
+                lockOpen = status[0] == 1
+                doorOpen = status[1] == 1
+            }
         } catch (_: Throwable) {
             // Callbacks may still update doorOpen.
         }
