@@ -302,8 +302,8 @@ class BketCoolerChannel(
     private fun pollDoorStatus(lock: BketLockAdapter) {
         try {
             val status = lock.getDoorAndLockStatus()
-            doorOpen = status and 0x01 != 0
-            lockOpen = status and 0x02 != 0
+            doorOpen = (status and 0x01) != 0
+            lockOpen = (status and 0x02) != 0
         } catch (_: Throwable) {
             // Callbacks may still update doorOpen.
         }
