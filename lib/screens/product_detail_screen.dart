@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import '../models/machine_slot.dart';
 import '../services/cart_service.dart';
 import '../services/purchase_service.dart';
+import '../utils/kiosk_page_transitions.dart';
 import '../widgets/kiosk_app_header.dart';
+import '../widgets/kiosk_interactive.dart';
 import 'cart_screen.dart';
 import 'purchase_result_screen.dart';
 
@@ -105,7 +107,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
+        kioskSlideRoute(
           builder: (_) => PurchaseResultScreen(purchases: [result]),
         ),
       );
@@ -127,14 +129,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
   }
 
   void _openCart() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CartScreen(
-          ageVerificationSessionId: widget.ageVerificationSessionId,
-        ),
-      ),
-    );
+    context.pushKioskScreen(CartScreen(
+      ageVerificationSessionId: widget.ageVerificationSessionId,
+    ));
   }
 
   Color _categoryColor(String? cat, Color fallback) {
@@ -551,7 +548,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
             Expanded(
               child: SizedBox(
                 height: 52,
-                child: ElevatedButton(
+                child: KioskElevatedButton(
                   onPressed:
                       _isLoading || soldOut ? null : _buyNow,
                   style: ElevatedButton.styleFrom(
@@ -559,6 +556,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
                     foregroundColor: Colors.white,
                     disabledBackgroundColor:
                         cs.onSurface.withValues(alpha: 0.12),
+                    minimumSize: const Size.fromHeight(52),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),
                     elevation: soldOut ? 0 : 3,

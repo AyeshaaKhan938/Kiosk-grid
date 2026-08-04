@@ -50,6 +50,19 @@ class Advertisement {
       sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'type': switch (type) {
+          AdMediaType.video => 'video',
+          AdMediaType.html => 'html',
+          AdMediaType.image => 'image',
+        },
+        'media_url': mediaUrl,
+        'link_url': linkUrl,
+        'sort_order': sortOrder,
+      };
 }
 
 /// Respuesta completa del endpoint GET /machines/{no}/advertisements.
@@ -96,4 +109,14 @@ class AdvertisementsResponse {
     top:            [],
     externalScreen: [],
   );
+
+  Map<String, dynamic> toJson() => {
+        'group_id': groupId,
+        'group_name': groupName,
+        'slots': {
+          'screensaver': screensaver.map((e) => e.toJson()).toList(),
+          'top': top.map((e) => e.toJson()).toList(),
+          'external_screen': externalScreen.map((e) => e.toJson()).toList(),
+        },
+      };
 }

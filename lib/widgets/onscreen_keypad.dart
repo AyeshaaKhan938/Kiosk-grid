@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../utils/tap_feedback.dart';
+
 /// Layout style for [OnScreenKeypad].
 enum KeypadMode {
   /// 0-9 only. Used for PINs and slot numbers.
@@ -109,6 +111,11 @@ class OnScreenKeypad extends StatelessWidget {
   }) {
     final defaultTap = label != null ? () => _append(label) : null;
     final effectiveTap = enabled ? (onTap ?? defaultTap) : null;
+    void wrappedTap() {
+      if (effectiveTap == null) return;
+      TapFeedback.play();
+      effectiveTap();
+    }
     return Expanded(
       flex: flex,
       child: Padding(
@@ -119,7 +126,7 @@ class OnScreenKeypad extends StatelessWidget {
             color: bg ?? Colors.white.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(radius),
             child: InkWell(
-              onTap: effectiveTap,
+              onTap: effectiveTap == null ? null : wrappedTap,
               borderRadius: BorderRadius.circular(radius),
               child: Center(
                 child: child ??

@@ -41,6 +41,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       return _ErrorView(message: _error!, onRetry: _load);
     }
 
+    if (_data?['offline'] == true) {
+      final pending = _data?['pending_sync'] as int? ?? 0;
+      return RefreshIndicator(
+        onRefresh: _load,
+        color: cs.primary,
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            _OfflineDashboardCard(pendingSync: pending),
+            const SizedBox(height: 16),
+            Text(
+              'Sales stats and order history need cloud connection. '
+              'Inventory, products, and ads can still be managed locally.',
+              style: TextStyle(
+                color: cs.onSurface.withValues(alpha: 0.65),
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final machine   = _data!['machine']   as Map<String, dynamic>;
     final today     = _data!['today']     as Map<String, dynamic>;
     final inventory = _data!['inventory'] as Map<String, dynamic>;
@@ -282,6 +305,56 @@ class _ErrorView extends StatelessWidget {
             label: const Text('Retry'),
           ),
         ]),
+      ),
+    );
+  }
+}
+
+class _OfflineDashboardCard extends StatelessWidget {
+  const _OfflineDashboardCard({required this.pendingSync});
+  final int pendingSync;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.cloud_off_rounded, color: cs.primary),
+                const SizedBox(width: 12),
+                Text(
+                  'Offline mode',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              pendingSync > 0
+                  ? '$pendingSync local change(s) will sync when internet returns.'
+                  : 'Managing catalog from local storage on this device.',
+              style: TextStyle(
+                color: cs.onSurface.withValues(alpha: 0.7),
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Machine: ${AppConfig.machineNo}',
+              style: TextStyle(
+                color: cs.onSurface.withValues(alpha: 0.5),
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

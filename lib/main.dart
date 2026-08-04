@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,8 +10,10 @@ import 'services/lottery_stock_service.dart';
 import 'services/accessibility_settings.dart';
 import 'services/board_heartbeat.dart';
 import 'services/kiosk_lockdown.dart';
+import 'services/local_kiosk_store.dart';
 import 'services/log_auto_uploader.dart';
 import 'services/log_file_util.dart';
+import 'services/offline_sync_service.dart';
 import 'services/update_checker.dart';
 import 'utils/web_reset.dart';
 import 'widgets/accessibility_fab.dart';
@@ -35,6 +38,8 @@ Future<void> main() async {
     }
   }
   await AppConfig.init();
+  await LocalKioskStore.instance.init();
+  await OfflineSyncService.instance.start();
 
   // Web dev: open /?reset_setup=1 in the browser address bar (full page
   // load — terminal hot restart alone does not pass this query param).
@@ -118,7 +123,18 @@ class _VMFSAppState extends State<VMFSApp> {
       debugShowCheckedModeBanner: false,
       navigatorKey: navigatorKey,
       // Tema cambia dinámicamente según la configuración de accesibilidad
-      theme: _a11y.buildTheme(),
+      theme: _a11y.buildTheme().copyWith(
+        splashFactory: InkSparkle.splashFactory,
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+          },
+        ),
+      ),
       // builder: inyecta el FAB ♿ en TODAS las pantallas + aplica text scale
       builder: (context, child) {
         final scale = _a11y.textScale;

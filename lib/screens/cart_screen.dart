@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../models/cart_item.dart';
 import '../services/cart_service.dart';
 import '../services/purchase_service.dart';
+import '../utils/kiosk_page_transitions.dart';
+import '../widgets/kiosk_interactive.dart';
 import 'purchase_result_screen.dart';
 
 /// Shopping cart review + checkout.
@@ -35,7 +37,7 @@ class _CartScreenState extends State<CartScreen> {
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
+        kioskSlideRoute(
           builder: (_) => PurchaseResultScreen(purchases: results),
         ),
       );
@@ -132,11 +134,12 @@ class _CartScreenState extends State<CartScreen> {
                     SizedBox(
                       width: double.infinity,
                       height: 54,
-                      child: ElevatedButton(
+                      child: KioskElevatedButton(
                         onPressed: _checkingOut ? null : _checkout,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: cs.primary,
                           foregroundColor: cs.onPrimary,
+                          minimumSize: const Size.fromHeight(54),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14)),
                         ),
@@ -198,7 +201,7 @@ class _CartLine extends StatelessWidget {
               ],
             ),
           ),
-          IconButton(
+          KioskIconButton(
             onPressed: () => cart.remove(slot.lineNumber),
             icon: Icon(Icons.delete_outline_rounded,
                 color: cs.error.withValues(alpha: 0.8)),

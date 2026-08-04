@@ -5,11 +5,15 @@ import 'package:http/http.dart' as http;
 
 import '../models/advertisement.dart';
 import 'app_config.dart';
+import 'local_kiosk_store.dart';
+import 'offline_sync_service.dart';
 
 /// Obtiene los anuncios de la máquina desde el backend vms-cloud.
 ///
 /// Endpoint: GET /api/v1/machines/{machineNo}/advertisements
 /// Respuesta: { group_id, group_name, slots: { screensaver, top, external_screen } }
+///
+/// Falls back to [LocalKioskStore] when cloud is unreachable.
 class AdvertisementService {
   static String get _baseUrl   => AppConfig.apiBaseUrl;
   static String get _machineNo => AppConfig.machineNo;
@@ -30,8 +34,7 @@ class AdvertisementService {
   /// Devuelve los anuncios de la máquina.
   ///
   /// - Usa caché durante [_cacheTtl] para no golpear la API en cada arranque.
-  /// - Devuelve [AdvertisementsResponse.empty] si no hay conexión o la máquina
-  ///   no tiene grupo de anuncios asignado.
+  /// - Devuelve datos locales si no hay conexión.
   ///
   /// Pass [forceRefresh] = true to bypass the in-memory cache. The idle
   /// screen's periodic re-poll uses this so an ad updated in vms-cloud
@@ -39,7 +42,6 @@ class AdvertisementService {
   /// wait the full [_cacheTtl] window or reboot the tablet.
   static Future<AdvertisementsResponse> fetchAds(
       [String? machineNo, bool forceRefresh = false]) async {
-    // Devolver caché si sigue vigente (a menos que el caller pida un refresh).
     if (!forceRefresh &&
         _cache != null &&
         _cacheTime != null &&
@@ -56,6 +58,11 @@ class AdvertisementService {
     debugPrint('[ads] GET $url');
 
     try {
+      await OfflineSyncService.instance.refreshConnectivity();
+      if (!OfflineSyncService.instance.isOnline) {
+        return _localOrCache();
+      }
+
       final response = await http
           .get(url, headers: {'Accept': 'application/json'})
           .timeout(const Duration(seconds: 8));
@@ -71,30 +78,31 @@ class AdvertisementService {
             'screensaver=${data.screensaver.length} '
             'top=${data.top.length} '
             'externalScreen=${data.externalScreen.length}');
-        if (data.isEmpty) {
-          debugPrint(
-              '[ads] response was parsed but has no ads in any slot — '
-              'check that the ad is added to a Group AND the Group is '
-              'tagged to machine $no in the admin UI.');
-        }
+        await LocalKioskStore.instance.saveAdvertisementsResponse(data);
         _cache     = data;
         _cacheTime = DateTime.now();
         return data;
       }
 
-      // Non-200 — log a short snippet of the body for the admin and fall
-      // through to the empty fallback (the idle screen will show demo
-      // slides instead).
       final snippet = response.body.length > 200
           ? '${response.body.substring(0, 200)}…'
           : response.body;
       debugPrint('[ads] non-200 response: $snippet');
-      return AdvertisementsResponse.empty;
+      return _localOrCache();
     } catch (e, stack) {
       debugPrint('[ads] fetch failed: $e\n$stack');
-      // Sin conexión → devolver caché expirado si existe, si no vacío
-      return _cache ?? AdvertisementsResponse.empty;
+      return _localOrCache();
     }
+  }
+
+  static AdvertisementsResponse _localOrCache() {
+    final local = LocalKioskStore.instance.loadAdvertisements();
+    if (!local.isEmpty) {
+      _cache = local;
+      _cacheTime = DateTime.now();
+      return local;
+    }
+    return _cache ?? AdvertisementsResponse.empty;
   }
 
   /// Limpia la caché (útil después de cambiar la config de la máquina).

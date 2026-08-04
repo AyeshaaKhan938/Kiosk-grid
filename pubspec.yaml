@@ -38,6 +38,9 @@ dependencies:
   # Save downloaded APK to a temp directory before triggering install
   path_provider: ^2.1.0
 
+  # Pick ad images from tablet storage (offline admin)
+  file_picker: ^8.1.7
+
   # Dynamic QR codes for age-verification mobile upload flow
   qr_flutter: ^4.1.0
 

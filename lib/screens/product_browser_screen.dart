@@ -2,11 +2,14 @@ import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../models/advertisement.dart';
+import '../utils/ad_media.dart';
 import '../models/machine_slot.dart';
 import '../models/product_category.dart';
 import '../services/advertisement_service.dart';
 import '../services/cart_service.dart';
 import '../services/slot_service.dart';
+import '../utils/kiosk_page_transitions.dart';
+import '../utils/tap_feedback.dart';
 import '../widgets/kiosk_app_header.dart';
 import 'admin_config_screen.dart';
 import 'cart_screen.dart';
@@ -149,6 +152,11 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
     if (ad.type != AdMediaType.image) return false;
     final url = ad.mediaUrl?.trim() ?? '';
     if (url.isEmpty) return false;
+    if (url.startsWith('data:image') ||
+        url.startsWith(LocalAdMediaService.localPrefix) ||
+        url.startsWith('assets/')) {
+      return true;
+    }
     final title = ad.title.trim().toLowerCase();
     if (title.isEmpty || title == 'test' || title == 'placeholder') {
       return false;
@@ -462,19 +470,15 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
 
   void _onProductTapped(MachineSlot slot) {
     if (!slot.isAvailable) return;
-    Navigator.push(context, PageRouteBuilder(
-      pageBuilder: (_, a, __) => ProductDetailScreen(
-        slot: slot,
-        ageVerificationSessionId: widget.ageVerificationSessionId,
-      ),
-      transitionsBuilder: (_, a, __, child) =>
-          FadeTransition(opacity: a, child: child),
-      transitionDuration: const Duration(milliseconds: 280),
+    context.pushKioskScreen(ProductDetailScreen(
+      slot: slot,
+      ageVerificationSessionId: widget.ageVerificationSessionId,
     ));
   }
 
   void _onAddToCart(MachineSlot slot) {
     if (!slot.isAvailable || slot.isOutOfStock) return;
+    TapFeedback.play();
     CartService.instance.add(slot);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -486,24 +490,14 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
   }
 
   void _openCart() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CartScreen(
-          ageVerificationSessionId: widget.ageVerificationSessionId,
-        ),
-      ),
-    );
+    context.pushKioskScreen(CartScreen(
+      ageVerificationSessionId: widget.ageVerificationSessionId,
+    ));
   }
 
   void _goBackToIdle() {
-    Navigator.of(context).pushReplacement(PageRouteBuilder(
-      pageBuilder: (_, animation, __) => const IdleScreen(),
-      transitionsBuilder: (_, animation, __, child) => FadeTransition(
-        opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-        child: child,
-      ),
-      transitionDuration: const Duration(milliseconds: 350),
+    Navigator.of(context).pushReplacement(kioskFadeRoute(
+      builder: (_) => const IdleScreen(),
     ));
   }
 
@@ -718,11 +712,9 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
       itemCount: _topAds.length,
       itemBuilder: (_, i) {
         final ad = _topAds[i];
-        return CachedNetworkImage(
-          imageUrl: ad.mediaUrl!,
-          fit: BoxFit.cover,
-          placeholder: (_, __) => Container(color: const Color(0xFF0A1628)),
-          errorWidget: (_, __, ___) => Container(color: const Color(0xFF0A1628)),
+        return AdMediaImage(
+          mediaUrl: ad.mediaUrl!,
+          error: Container(color: const Color(0xFF0A1628)),
         );
       },
     );
@@ -1017,7 +1009,10 @@ class _MarqueeRowState extends State<_MarqueeRow>
     if (idx < 0 || idx >= widget.slots.length) return;
 
     final slot = widget.slots[idx];
-    if (slot.isAvailable) widget.onTap(slot);
+    if (slot.isAvailable) {
+      TapFeedback.play();
+      widget.onTap(slot);
+    }
   }
 
   @override

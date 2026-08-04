@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/app_config.dart';
 import '../services/kiosk_lockdown.dart';
+import '../services/local_kiosk_store.dart';
 import '../widgets/onscreen_keypad.dart';
 import 'kiosk_home_screen.dart';
 
@@ -83,6 +84,11 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
     }
   }
 
+  void _skipToMachine() {
+    _pageController.jumpToPage(2);
+    setState(() => _currentStep = 2);
+  }
+
   Future<void> _finish() async {
     // Guardar modo de backend
     await AppConfig.setBackendMode(_backendMode);
@@ -112,6 +118,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
         language:        'en',
       );
     }
+
+    await LocalKioskStore.instance.seedEmptyIfNeeded();
 
     if (!mounted) return;
 
@@ -163,6 +171,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
                   children: [
                     _StepNetwork(
                       onNext: _next,
+                      onOffline: _skipToMachine,
                     ),
                     _StepBackend(
                       initialMode:             _backendMode,
@@ -324,7 +333,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
 
 class _StepNetwork extends StatefulWidget {
   final VoidCallback onNext;
-  const _StepNetwork({required this.onNext});
+  final VoidCallback onOffline;
+  const _StepNetwork({required this.onNext, required this.onOffline});
 
   @override
   State<_StepNetwork> createState() => _StepNetworkState();
@@ -450,6 +460,16 @@ class _StepNetworkState extends State<_StepNetwork> {
           ),
 
           const SizedBox(height: 16),
+          if (!_isConnected)
+            TextButton.icon(
+              onPressed: widget.onOffline,
+              icon: const Icon(Icons.offline_bolt_rounded, color: Colors.amber),
+              label: const Text(
+                'Continue offline — manage locally on this device',
+                style: TextStyle(color: Colors.amber, fontSize: 13),
+              ),
+            ),
+          const SizedBox(height: 8),
           const Text(
             'Connect this device to your store\'s Wi-Fi or Ethernet\nbefore proceeding. Mobile data also works.',
             textAlign: TextAlign.center,
@@ -578,6 +598,18 @@ class _StepBackendState extends State<_StepBackend> {
             status: _urlStatus,
             label: 'Test',
             onTap: _testUrl,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Center(
+          child: TextButton.icon(
+            onPressed: () => widget.onNext(_config),
+            icon: const Icon(Icons.offline_bolt_rounded,
+                color: Colors.amber, size: 18),
+            label: const Text(
+              'Skip — manage locally without cloud',
+              style: TextStyle(color: Colors.amber, fontSize: 13),
+            ),
           ),
         ),
         if (_urlStatus != null) ...[

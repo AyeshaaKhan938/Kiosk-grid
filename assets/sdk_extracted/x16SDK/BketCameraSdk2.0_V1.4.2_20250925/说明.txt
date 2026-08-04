@@ -1,0 +1,8 @@
+本SDK适用于宝坚智能售卖方案一下硬件平台：
+BKX16、BKX16Plus、BKX18、BKX21、BK16S、BKX16E、BKX09(搭配BKS13或BKS11)、BKX10(搭配BKS13或BKS11)
+
+bketCamera-release-xxx.aar  sdk包
+javaDoc/index.html sdk接口说明,录像控制等相关指令，请优先使用带(new)标识的接口。
+bkCameraNewSdk2Demo.rar 简单的demo
+BKX16_BKX18_BKX21_camera_demo.apk demo编译的apk
+BKX16-BKX18摄控一体机SDK开发文档-V2.0-20240625 辅助说明文档

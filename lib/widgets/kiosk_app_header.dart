@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/cart_service.dart';
+import 'kiosk_interactive.dart';
+import 'tap_scale.dart';
 
 /// Consistent dark gradient header used across kiosk customer screens.
 class KioskAppHeader extends StatelessWidget {
@@ -51,7 +53,7 @@ class KioskAppHeader extends StatelessWidget {
           child: Row(
             children: [
               if (onBack != null) ...[
-                IconButton(
+                KioskIconButton(
                   tooltip: 'Back',
                   onPressed: onBack,
                   icon: Icon(Icons.arrow_back_ios_new_rounded,
@@ -61,7 +63,7 @@ class KioskAppHeader extends StatelessWidget {
                 ),
                 SizedBox(width: compact ? 2 : 4),
               ],
-              GestureDetector(
+              TapScale(
                 onTap: onLogoTap,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
@@ -110,7 +112,7 @@ class KioskAppHeader extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (onRefresh != null)
-                    IconButton(
+                    KioskIconButton(
                       tooltip: 'Refresh',
                       onPressed: onRefresh,
                       padding: EdgeInsets.zero,
@@ -144,7 +146,7 @@ class _CartHeaderButton extends StatelessWidget {
         return Stack(
           clipBehavior: Clip.none,
           children: [
-            IconButton(
+            KioskIconButton(
               tooltip: 'Cart',
               onPressed: onTap,
               padding: EdgeInsets.zero,
@@ -198,7 +200,7 @@ class MobileCartFab extends StatelessWidget {
         final count = CartService.instance.itemCount;
         return Padding(
           padding: const EdgeInsets.only(left: 8, bottom: 8),
-          child: FloatingActionButton.extended(
+          child: KioskFloatingActionButton.extended(
             heroTag: 'mobile_cart_fab',
             backgroundColor: const Color(0xFFFF6B35),
             foregroundColor: Colors.white,

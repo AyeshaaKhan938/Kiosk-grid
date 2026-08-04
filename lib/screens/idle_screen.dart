@@ -1,12 +1,16 @@
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/advertisement.dart';
+import '../utils/ad_media.dart';
 import '../services/advertisement_service.dart';
 import '../services/app_config.dart';
 import '../services/update_checker.dart';
 import '../services/update_service.dart';
+import '../utils/kiosk_page_transitions.dart';
 import '../widgets/lottery_stock_shell.dart';
+import '../widgets/tap_scale.dart';
 import 'admin_config_screen.dart';
 import 'age_verification_screen.dart';
 import 'product_browser_screen.dart';
@@ -43,31 +47,31 @@ class _IdleScreenState extends State<IdleScreen>
     _DemoSlide(
       title: 'PREMIUM SNACKS',
       subtitle: 'Over 15 snacks & candies to choose from',
-      imageUrl: 'https://picsum.photos/seed/snacks-chips/1280/800',
+      assetPath: 'assets/images/vmfs-logo.jpg',
       gradientColors: [Color(0xFFFF6B35), Color(0xFF1A0A00)],
     ),
     _DemoSlide(
       title: 'COLD BEVERAGES',
       subtitle: 'Stay refreshed — sodas, water, energy drinks',
-      imageUrl: 'https://picsum.photos/seed/beverages-cold/1280/800',
+      assetPath: 'assets/images/vmfs-logo.jpg',
       gradientColors: [Color(0xFF0066CC), Color(0xFF000820)],
     ),
     _DemoSlide(
       title: 'TECH ACCESSORIES',
       subtitle: 'Cables, chargers, earbuds — always in stock',
-      imageUrl: 'https://picsum.photos/seed/tech-gadgets/1280/800',
+      assetPath: 'assets/images/vmfs-logo.jpg',
       gradientColors: [Color(0xFF007ACC), Color(0xFF000A14)],
     ),
     _DemoSlide(
       title: 'HEALTH & WELLNESS',
       subtitle: 'Hand sanitizer, pain relief and more',
-      imageUrl: 'https://picsum.photos/seed/health-wellness/1280/800',
+      assetPath: 'assets/images/vmfs-logo.jpg',
       gradientColors: [Color(0xFF00AA66), Color(0xFF001A0D)],
     ),
     _DemoSlide(
       title: 'VMFS USA KIOSK',
       subtitle: 'Touch anywhere to browse all products',
-      imageUrl: 'https://picsum.photos/seed/vending-kiosk/1280/800',
+      assetPath: 'assets/images/vmfs-logo.jpg',
       gradientColors: [Color(0xFF6600CC), Color(0xFF0A0014)],
       isHighlight: true,
     ),
@@ -189,13 +193,8 @@ class _IdleScreenState extends State<IdleScreen>
     final next = AppConfig.ageVerificationEnabled
         ? const AgeVerificationScreen()
         : const ProductBrowserScreen();
-    Navigator.of(context).push(PageRouteBuilder(
-      pageBuilder: (_, animation, __) => next,
-      transitionsBuilder: (_, animation, __, child) => FadeTransition(
-        opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-        child: child,
-      ),
-      transitionDuration: const Duration(milliseconds: 350),
+    Navigator.of(context).push(kioskFadeRoute(
+      builder: (_) => next,
     ));
   }
 
@@ -216,20 +215,19 @@ class _IdleScreenState extends State<IdleScreen>
           fit: StackFit.expand,
           children: [
             // Base layer: full-screen tappable region → product browser
-            GestureDetector(
+            TapScale(
               onTap: _onTap,
-              behavior: HitTestBehavior.opaque,
+              primary: true,
               child: _buildSlideStack(useDemo: useDemo, slideCount: slideCount),
             ),
 
-            // Invisible admin entry — top-left 60x60 area, 5 taps within 2s.
-            // Sits above the main GestureDetector so taps here don't open
-            // the product browser.
+            // Invisible admin entry — top-left corner, 5 taps within 2s.
+            // Web/desktop gets a larger hit target (easier to click with mouse).
             Positioned(
               top: 0,
               left: 0,
-              width: 60,
-              height: 60,
+              width: kIsWeb ? 120 : 60,
+              height: kIsWeb ? 120 : 60,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: _onSecretTap,
@@ -337,13 +335,15 @@ class _IdleScreenState extends State<IdleScreen>
 class _DemoSlide {
   final String title;
   final String subtitle;
-  final String imageUrl;
+  final String? imageUrl;
+  final String? assetPath;
   final List<Color> gradientColors;
   final bool isHighlight;
   const _DemoSlide({
     required this.title,
     required this.subtitle,
-    required this.imageUrl,
+    this.imageUrl,
+    this.assetPath,
     required this.gradientColors,
     this.isHighlight = false,
   });
@@ -361,15 +361,23 @@ class _DemoSlideWidget extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Imagen de fondo (con caché en disco/memoria)
-        CachedNetworkImage(
-          imageUrl: slide.imageUrl,
-          fit: BoxFit.cover,
-          placeholder: (_, __) =>
-              Container(color: slide.gradientColors.last),
-          errorWidget: (_, __, ___) =>
-              Container(color: slide.gradientColors.last),
-        ),
+        // Imagen de fondo (asset local o red con caché)
+        if (slide.assetPath != null)
+          Image.asset(
+            slide.assetPath!,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) =>
+                Container(color: slide.gradientColors.last),
+          )
+        else
+          CachedNetworkImage(
+            imageUrl: slide.imageUrl ?? '',
+            fit: BoxFit.cover,
+            placeholder: (_, __) =>
+                Container(color: slide.gradientColors.last),
+            errorWidget: (_, __, ___) =>
+                Container(color: slide.gradientColors.last),
+          ),
 
         // Gradiente sobre la imagen
         Container(
@@ -470,46 +478,18 @@ class _BackendAdWidget extends StatelessWidget {
   final Advertisement ad;
   const _BackendAdWidget({required this.ad});
 
-  /// Resolve a possibly-relative media URL against the configured API
-  /// host. Laravel storage links are commonly returned as `/storage/...`
-  /// when the server isn't aware of its public hostname; Image.network
-  /// won't load those, so we prefix with the configured base URL host.
-  String _resolveUrl(String raw) {
-    if (raw.startsWith('http://') || raw.startsWith('https://')) {
-      return raw;
-    }
-    final base = AppConfig.apiBaseUrl;       // e.g. https://cloud.vmfsusa.com/api/v1
-    final origin = Uri.tryParse(base)?.origin ?? base;
-    final path = raw.startsWith('/') ? raw : '/$raw';
-    return '$origin$path';
-  }
-
   @override
   Widget build(BuildContext context) {
     if (ad.type == AdMediaType.image && ad.mediaUrl != null) {
-      final url = _resolveUrl(ad.mediaUrl!);
-      // CachedNetworkImage handles disk+memory caching, redirect chains,
-      // and surfaces detailed errors via errorWidget. It also works
-      // around several quirks Flutter Web's bare Image.network has
-      // with cross-origin images.
-      return CachedNetworkImage(
-        imageUrl: url,
-        fit: BoxFit.cover,
-        fadeInDuration: const Duration(milliseconds: 200),
-        placeholder: (_, __) => _fallback(ad.title),
-        errorWidget: (_, failedUrl, error) {
-          debugPrint('[ads] image load failed for "$failedUrl": $error');
-          return _fallback(ad.title);
-        },
+      return AdMediaImage(
+        mediaUrl: ad.mediaUrl!,
+        error: _fallback(ad.title),
       );
     }
     return _fallback(ad.title);
   }
 
-  /// Silent fallback — pure black background, no text. Used when the
-  /// backend's image URL fails to load. The title is intentionally
-  /// not displayed because customers should never see a placeholder
-  /// label; either the ad renders or nothing renders.
+  /// Silent fallback — pure black background, no text.
   Widget _fallback(String title) => const ColoredBox(color: Colors.black);
 }
 
