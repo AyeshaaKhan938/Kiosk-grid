@@ -43,6 +43,7 @@ dependencies:
 
   # Dynamic QR codes for age-verification mobile upload flow
   qr_flutter: ^4.1.0
+  audioplayers: ^6.4.0
 
 dev_dependencies:
   flutter_test:
@@ -58,3 +59,5 @@ flutter:
   # missing, app_config.dart's baked production fallbacks take over.
   assets:
     - assets/images/
+    - assets/sounds/tap_click.wav
+    - assets/sounds/tap_primary.wav
