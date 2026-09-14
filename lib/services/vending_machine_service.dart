@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import 'afen_vmc_service.dart';
 import 'bket_cooler_service.dart';
 import 'dispense_wake_lock.dart';
 import 'log_file_util.dart';
+import 'machine_issue_service.dart';
 import 'serial_frame_assembler.dart';
 import 'tcn_serial_service.dart';
 import 'tty_serial.dart';
@@ -393,6 +395,18 @@ static Uint8List buildResetVmcFrame() => _buildFrame(0xA1, [0xFF]);
       paymentMethod: paymentMethod,
       paymentReference: paymentReference,
     );
+
+    if (physicalSuccess) {
+      unawaited(MachineIssueService.instance.resolveDispenseFailure(
+        slotNumber: lineNumber,
+      ));
+    } else {
+      unawaited(MachineIssueService.instance.reportDispenseFailure(
+        slotNumber: lineNumber,
+        error: errorMsg,
+        lotteryCode: lotteryCode,
+      ));
+    }
 
     return DispenseResult(
       status: physicalSuccess ? DispenseStatus.success : DispenseStatus.error,

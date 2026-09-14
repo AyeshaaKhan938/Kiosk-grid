@@ -11,14 +11,16 @@ import '../../services/offline_sync_service.dart';
 /// Shell del panel admin con barra de navegación inferior.
 /// Accesible desde AdminConfigScreen tras autenticación con PIN.
 class AdminShellScreen extends StatefulWidget {
-  const AdminShellScreen({super.key});
+  const AdminShellScreen({super.key, this.initialTab = 0});
+
+  final int initialTab;
 
   @override
   State<AdminShellScreen> createState() => _AdminShellScreenState();
 }
 
 class _AdminShellScreenState extends State<AdminShellScreen> {
-  int _index = 0;
+  late int _index;
 
   static const _screens = [
     AdminDashboardScreen(),
@@ -54,6 +56,7 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
   @override
   void initState() {
     super.initState();
+    _index = widget.initialTab.clamp(0, 4);
     _ensureLocalSnapshot();
   }
 

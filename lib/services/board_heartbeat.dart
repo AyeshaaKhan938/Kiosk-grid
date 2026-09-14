@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'app_config.dart';
 import 'log_file_util.dart';
+import 'machine_issue_service.dart';
 import 'vending_machine_service.dart';
 
 /// Periodic Reyeah Control Board heartbeat — mirrors factory.apk's
@@ -33,6 +34,7 @@ class BoardHeartbeat {
 
   Timer? _timer;
   bool _running = false;
+  int _consecutiveFailures = 0;
 
   /// Start the heartbeat loop. Safe to call multiple times — only the
   /// first call wires up the timer.
@@ -62,9 +64,32 @@ class BoardHeartbeat {
     }
     try {
       final ok = await VendingMachineService.queryStatusViaGate();
-      LogFileUtil.i(ok ? 'heartbeat.ok' : 'heartbeat.no_reply');
+      if (ok) {
+        if (_consecutiveFailures >= 3) {
+          unawaited(MachineIssueService.instance.resolveBoardOffline());
+        }
+        _consecutiveFailures = 0;
+        LogFileUtil.i('heartbeat.ok');
+      } else {
+        _consecutiveFailures++;
+        LogFileUtil.i('heartbeat.no_reply', {
+          'streak': _consecutiveFailures.toString(),
+        });
+        if (_consecutiveFailures >= 3) {
+          unawaited(MachineIssueService.instance.reportBoardOffline(
+            message: 'Control board did not respond to heartbeat '
+                '($_consecutiveFailures consecutive failures).',
+          ));
+        }
+      }
     } catch (e, st) {
+      _consecutiveFailures++;
       LogFileUtil.e('heartbeat.error', error: e, stack: st);
+      if (_consecutiveFailures >= 3) {
+        unawaited(MachineIssueService.instance.reportBoardOffline(
+          message: 'Heartbeat error: $e',
+        ));
+      }
     }
   }
 }

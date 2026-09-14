@@ -7,6 +7,7 @@ import 'api_service.dart';
 import 'app_config.dart';
 import 'bket_cooler_service.dart';
 import 'log_file_util.dart';
+import 'machine_issue_service.dart';
 
 /// Headless AI cooler flow: poll POS-paid sessions → unlock door → upload
 /// videos → poll order until vms-cloud finishes review + billing.
@@ -222,6 +223,8 @@ class CoolerOrchestratorService extends ChangeNotifier {
         error: error,
       );
     } catch (_) {}
+
+    unawaited(MachineIssueService.instance.reportDoorFault(message: error));
   }
 
   void _showError(String message) {

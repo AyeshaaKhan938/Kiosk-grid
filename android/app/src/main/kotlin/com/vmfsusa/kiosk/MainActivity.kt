@@ -74,13 +74,16 @@ class MainActivity : FlutterActivity() {
         // leave black space at the top/bottom).
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        if (kioskModeAllowed) applyImmersive()
+        if (kioskModeAllowed) applyImmersiveSafely()
     }
 
     override fun onResume() {
         super.onResume()
         if (kioskModeAllowed) {
-            applyImmersive()
+            // Returning from Wi‑Fi / Settings / package installer can deliver
+            // activity results before the decor view is fully attached — guard
+            // against NPEs on setVisibility (OEM launchers show the same crash).
+            applyImmersiveSafely()
             enableKioskMode()
         }
     }
@@ -90,9 +93,29 @@ class MainActivity : FlutterActivity() {
         if (hasFocus && kioskModeAllowed) {
             // Anything that took focus away (dialog, A11y, peek-down) is gone —
             // immediately re-hide the bars and re-pin if pinning was broken.
-            applyImmersive()
+            applyImmersiveSafely()
             enableKioskMode()
         }
+    }
+
+    /**
+     * Decor view may be null briefly after [onActivityResult] / external intents.
+     */
+    private fun decorViewOrNull(): View? {
+        return try {
+            window?.decorView
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun applyImmersiveSafely() {
+        val decor = decorViewOrNull() ?: return
+        if (!decor.isAttachedToWindow) {
+            decor.post { applyImmersiveSafely() }
+            return
+        }
+        applyImmersive()
     }
 
     /**
@@ -104,7 +127,8 @@ class MainActivity : FlutterActivity() {
      * flash within ~50 ms of it appearing.
      */
     private fun applyImmersive() {
-        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        val decor = decorViewOrNull() ?: return
+        val controller = WindowInsetsControllerCompat(window, decor)
         controller.hide(WindowInsetsCompat.Type.systemBars())
         controller.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -112,7 +136,7 @@ class MainActivity : FlutterActivity() {
         // Legacy flag set for older Android — overlaps with the controller
         // above but covers edge cases on some OEM ROMs.
         @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility = (
+        decor.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                 or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
@@ -128,11 +152,12 @@ class MainActivity : FlutterActivity() {
         // still keeps a tiny mandatory exclusion at the very corners for
         // accessibility; full edge-to-edge blocking needs Device Owner.)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            window.decorView.post {
-                val w = window.decorView.width
-                val h = window.decorView.height
+            decor.post {
+                val attached = decorViewOrNull() ?: return@post
+                val w = attached.width
+                val h = attached.height
                 if (w > 0 && h > 0) {
-                    window.decorView.systemGestureExclusionRects =
+                    attached.systemGestureExclusionRects =
                         listOf(Rect(0, 0, w, h))
                 }
             }
@@ -143,11 +168,12 @@ class MainActivity : FlutterActivity() {
         // we immediately request hide again. This kills the brief flash
         // visually — there will be at most a single-frame appearance.
         @Suppress("DEPRECATION")
-        window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
+        decor.setOnSystemUiVisibilityChangeListener { visibility ->
             if (visibility and View.SYSTEM_UI_FLAG_HIDE_NAVIGATION == 0) {
                 // Hide again on the next frame to dodge OS re-show races.
-                window.decorView.post {
-                    WindowInsetsControllerCompat(window, window.decorView)
+                decor.post {
+                    val attached = decorViewOrNull() ?: return@post
+                    WindowInsetsControllerCompat(window, attached)
                         .hide(WindowInsetsCompat.Type.systemBars())
                 }
             }
@@ -241,7 +267,7 @@ class MainActivity : FlutterActivity() {
                         result.success(isInLockTaskMode())
                     }
                     "applyImmersive" -> {
-                        applyImmersive()
+                        applyImmersiveSafely()
                         result.success(true)
                     }
                     "setKioskModeAllowed" -> {
@@ -252,7 +278,7 @@ class MainActivity : FlutterActivity() {
                             // Switched ON — re-apply lockdown immediately so
                             // the admin doesn't have to background+foreground
                             // the app to see the bars disappear.
-                            applyImmersive()
+                            applyImmersiveSafely()
                             enableKioskMode()
                         } else {
                             // Switched OFF — drop out of Lock Task Mode so
@@ -297,20 +323,21 @@ class MainActivity : FlutterActivity() {
      * fullscreen app with no way to navigate.
      */
     private fun showSystemBars() {
-        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        val decor = decorViewOrNull() ?: return
+        val controller = WindowInsetsControllerCompat(window, decor)
         controller.show(WindowInsetsCompat.Type.systemBars())
 
         // Drop the legacy fullscreen flag set so the OS goes back to
         // rendering its own decor.
         @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+        decor.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
 
         // Disarm the re-hide listener and clear the gesture-exclusion
         // rects so the OS reacts to swipes again.
         @Suppress("DEPRECATION")
-        window.decorView.setOnSystemUiVisibilityChangeListener(null)
+        decor.setOnSystemUiVisibilityChangeListener(null)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            window.decorView.systemGestureExclusionRects = emptyList()
+            decor.systemGestureExclusionRects = emptyList()
         }
     }
 }

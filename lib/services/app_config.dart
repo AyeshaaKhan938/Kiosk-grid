@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:math';
+
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,9 +22,15 @@ class AppConfig {
   /// Bearer token de gestión para los endpoints /admin/* del backend.
   /// Requerido para usar el Admin Panel (dashboard, inventario, órdenes).
   static const _kManagementToken = 'cfg_management_token';
+  static const _kDeviceToken = 'cfg_device_token';
+  static const _kHardwareId = 'cfg_hardware_id';
   static const _kAdminPin = 'cfg_admin_pin';
   static const _kLanguage = 'cfg_language';
   static const _kConfigured = 'cfg_is_configured';
+
+  /// Training / sales demo — simulates dispense and shows guided setup.
+  static const _kDemoMode = 'cfg_demo_mode';
+  static const _kSimulateDispenseBeforeDemo = 'cfg_simulate_dispense_before_demo';
   // true → saltar USB serial real y simular despacho exitoso (pruebas)
   static const _kSimulateDispense = 'cfg_simulate_dispense';
 
@@ -162,6 +170,41 @@ static String get ttyPathLift =>
     return _prodMachineNo;
   }
 
+  static Future<void> setMachineNo(String value) async =>
+      _prefs?.setString(_kMachineNo, value.trim());
+
+  /// Bearer token issued by POST /api/v1/kiosk/activate — required for
+  /// heartbeat and machine issue reporting.
+  static String get deviceToken => _prefs?.getString(_kDeviceToken) ?? '';
+
+  static bool get hasDeviceToken => deviceToken.isNotEmpty;
+
+  static Future<void> setDeviceToken(String token) async =>
+      _prefs?.setString(_kDeviceToken, token.trim());
+
+  /// Stable tablet identifier sent during cloud activation / heartbeat.
+  static Future<String> ensureHardwareId() async {
+    final existing = _prefs?.getString(_kHardwareId);
+    if (existing != null && existing.isNotEmpty) return existing;
+
+    final rng = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rng.nextInt(256));
+    final id = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    await _prefs?.setString(_kHardwareId, id);
+
+    return id;
+  }
+
+  /// Cloud origin without /api/v1 — used by [MachineIssueReporter].
+  static String get cloudWebOrigin {
+    final api = apiBaseUrl.replaceAll(RegExp(r'/$'), '');
+    if (api.endsWith('/api/v1')) {
+      return api.substring(0, api.length - '/api/v1'.length);
+    }
+
+    return api;
+  }
+
   static String get lotteryToken {
     final stored = _prefs?.getString(_kLotteryToken);
     if (stored != null && stored.isNotEmpty) return stored;
@@ -197,6 +240,31 @@ static String get ttyPathLift =>
   static String get language => _prefs?.getString(_kLanguage) ?? 'en';
 
   static bool get isConfigured => _prefs?.getBool(_kConfigured) ?? false;
+
+  static bool get demoMode => _prefs?.getBool(_kDemoMode) ?? false;
+
+  /// Optional URL for the demo intro video (HTTPS). Falls back to bundled asset.
+  static String get demoVideoUrl =>
+      dotenv.env['DEMO_VIDEO_URL']?.trim() ?? '';
+
+  static Future<void> setDemoMode(bool enabled) async {
+    final p = _prefs;
+    if (p == null) return;
+
+    if (enabled) {
+      await p.setBool(
+        _kSimulateDispenseBeforeDemo,
+        simulateDispense,
+      );
+      await p.setBool(_kDemoMode, true);
+      await setSimulateDispense(true);
+    } else {
+      await p.setBool(_kDemoMode, false);
+      final restore = p.getBool(_kSimulateDispenseBeforeDemo) ?? false;
+      await setSimulateDispense(restore);
+      await p.remove(_kSimulateDispenseBeforeDemo);
+    }
+  }
 
   /// Si es true, el despacho es simulado (sin USB serial).
   /// Activar en el Admin Panel para pruebas sin hardware conectado.

@@ -9,6 +9,7 @@ import 'services/app_config.dart';
 import 'services/lottery_stock_service.dart';
 import 'services/accessibility_settings.dart';
 import 'services/board_heartbeat.dart';
+import 'services/kiosk_cloud_service.dart';
 import 'services/kiosk_lockdown.dart';
 import 'services/local_kiosk_store.dart';
 import 'services/log_auto_uploader.dart';
@@ -70,6 +71,9 @@ Future<void> main() async {
   // Quietly poll vms-cloud for new APK releases. The idle screen shows a
   // discreet badge when one is ready.
   UpdateChecker.instance.startBackgroundChecks();
+
+  // Cloud heartbeat + issue queue flush (requires device token from activation).
+  KioskCloudService.instance.start();
 
   // Periodic CMD 0xE1 heartbeat — slot vending boards only.
   if (!AppConfig.isBketCooler) {

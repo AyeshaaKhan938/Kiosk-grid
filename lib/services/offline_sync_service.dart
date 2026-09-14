@@ -6,8 +6,10 @@ import 'package:http/http.dart' as http;
 
 import 'admin_api_service.dart';
 import 'app_config.dart';
+import 'kiosk_cloud_service.dart';
 import 'local_kiosk_store.dart';
 import 'log_file_util.dart';
+import 'machine_issue_service.dart';
 
 /// Tracks connectivity and flushes queued admin mutations when back online.
 class OfflineSyncService {
@@ -48,6 +50,8 @@ class OfflineSyncService {
     _online = await _pingCloud();
     if (_online) {
       unawaited(flushPendingMutations());
+      unawaited(MachineIssueService.instance.flushOfflineQueue());
+      unawaited(KioskCloudService.instance.heartbeat());
     }
   }
 
