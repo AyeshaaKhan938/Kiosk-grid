@@ -87,6 +87,16 @@
                 android:resource="@xml/device_filter" />
         </activity>
 
+        <!-- APK self-update: isolated from MainActivity so installer results
+             never crash the Flutter activity (OEM launchers use the same pattern). -->
+        <activity
+            android:name=".InstallApkActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:launchMode="singleTask" />
+
         <!-- Flutter embedding v2 -->
         <meta-data
             android:name="flutterEmbedding"

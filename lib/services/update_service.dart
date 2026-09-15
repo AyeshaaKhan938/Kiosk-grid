@@ -80,6 +80,7 @@ class UpdateService {
     final machineNo = AppConfig.machineNo.trim();
     final params = <String, String>{
       'current_version_code': code.toString(),
+      'app_line': AppConfig.kioskAppLine,
     };
     if (machineNo.isNotEmpty) {
       params['machine_no'] = machineNo;

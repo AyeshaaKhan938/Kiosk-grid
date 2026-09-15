@@ -89,6 +89,14 @@ class AppConfig {
 static String get ttyPathLift =>
     _prefs?.getString('cfg_tty_path_lift') ?? '/dev/ttyS8';
 
+  /// OTA channel sent to vms-cloud (`lottery` vs `grid`) so remote updates
+  /// never cross-install the wrong kiosk APK. Grid builds use:
+  /// `--dart-define=KIOSK_APP_LINE=grid`
+  static const String kioskAppLine = String.fromEnvironment(
+    'KIOSK_APP_LINE',
+    defaultValue: 'lottery',
+  );
+
   // ── Production fallbacks (baked into the APK) ─────────────────────────────
   // These values win when the .env entry is missing AND when the operator
   // never touched the field in the kiosk admin. They are the canonical values

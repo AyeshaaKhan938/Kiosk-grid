@@ -97,22 +97,11 @@ class ApkInstallerChannel(private val context: Context, engine: FlutterEngine) {
         val file = File(path)
         if (!file.exists()) return false
 
-        val uri: Uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            FileProvider.getUriForFile(
-                context,
-                context.packageName + ".fileprovider",
-                file,
-            )
-        } else {
-            Uri.fromFile(file)
-        }
+        val intent =
+            Intent(context, InstallApkActivity::class.java)
+                .putExtra(InstallApkActivity.EXTRA_APK_PATH, path)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-        val intent = Intent(Intent.ACTION_VIEW)
-            .setDataAndType(uri, "application/vnd.android.package-archive")
-            .addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
         context.startActivity(intent)
         return true
     }

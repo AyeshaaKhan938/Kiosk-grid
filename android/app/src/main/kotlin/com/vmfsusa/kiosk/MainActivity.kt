@@ -7,6 +7,7 @@ import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
@@ -95,6 +96,25 @@ class MainActivity : FlutterActivity() {
             // immediately re-hide the bars and re-pin if pinning was broken.
             applyImmersiveSafely()
             enableKioskMode()
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        try {
+            super.onActivityResult(requestCode, resultCode, data)
+        } catch (t: Throwable) {
+            // Package installer / OEM flows can crash FlutterActivity bases when
+            // delivering results before the decor view exists (factory launchers
+            // show the same setVisibility NPE as com.yy.chuanyisoft).
+            Log.e("MainActivity", "onActivityResult failed safely", t)
+        }
+
+        if (kioskModeAllowed) {
+            decorViewOrNull()?.post {
+                applyImmersiveSafely()
+                enableKioskMode()
+            }
         }
     }
 

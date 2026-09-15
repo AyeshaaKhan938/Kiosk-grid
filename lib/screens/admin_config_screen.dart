@@ -1971,6 +1971,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     // after the download completes. Drop out of pinning *before* firing
     // the install intent; onResume() will re-pin automatically when the
     // installer dialog closes or the app relaunches with the new APK.
+    await KioskLockdown.setKioskModeAllowed(false);
     await KioskLockdown.exitKioskMode();
 
     final launched = await UpdateService.installApk(path);
@@ -1985,7 +1986,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     }
     // If launched succeeded, Android takes over from here. After the admin
     // taps "Install" on the system dialog, the kiosk relaunches with the
-    // new version.
+    // new version (process restart restores kiosk lockdown).
   }
 
   Future<void> _showSimpleDialog({
