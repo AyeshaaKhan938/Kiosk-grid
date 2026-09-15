@@ -552,7 +552,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
                   onPressed:
                       _isLoading || soldOut ? null : _buyNow,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF6B35),
+                    backgroundColor: cs.primary,
                     foregroundColor: Colors.white,
                     disabledBackgroundColor:
                         cs.onSurface.withValues(alpha: 0.12),

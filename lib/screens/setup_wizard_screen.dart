@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import '../services/app_config.dart';
 import '../services/kiosk_lockdown.dart';
 import '../services/local_kiosk_store.dart';
+import '../widgets/cloud_activation_panel.dart';
 import '../widgets/onscreen_keypad.dart';
+import 'demo_mode/demo_mode_screen.dart';
 import 'kiosk_home_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -12,14 +14,22 @@ import 'kiosk_home_screen.dart';
 //
 // Steps:
 //   1. Network       → verificar WiFi / Ethernet
-//   2. Backend       → API URL + Lottery Token + Test Connection
+//   2. Backend       → API URL + Test Connection + cloud device activation
 //   3. This Machine  → Machine No + Admin PIN + Confirm PIN
 // ─────────────────────────────────────────────────────────────────────────────
 
 class SetupWizardScreen extends StatefulWidget {
   /// Si [isEditing] viene desde AdminConfigScreen.
   final bool isEditing;
-  const SetupWizardScreen({super.key, this.isEditing = false});
+
+  /// 0 = Network, 1 = Backend (API test), 2 = Machine + PIN.
+  final int initialStep;
+
+  const SetupWizardScreen({
+    super.key,
+    this.isEditing = false,
+    this.initialStep = 0,
+  });
 
   @override
   State<SetupWizardScreen> createState() => _SetupWizardScreenState();
@@ -48,6 +58,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
   @override
   void initState() {
     super.initState();
+    final step = widget.initialStep.clamp(0, _totalSteps - 1);
+    _currentStep = step;
     _backendMode     = AppConfig.backendMode;
     _apiBaseUrl      = AppConfig.apiBaseUrl;
     _machineNo       = AppConfig.machineNo;
@@ -56,6 +68,14 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
     _vmAppSecret     = AppConfig.vmAppSecret;
     _vmMachineNo     = AppConfig.vmMachineNo;
     _adminPin        = AppConfig.adminPin;
+
+    if (step > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_pageController.hasClients) {
+          _pageController.jumpToPage(step);
+        }
+      });
+    }
   }
 
   @override
@@ -618,6 +638,37 @@ class _StepBackendState extends State<_StepBackend> {
               ? 'Server reachable ✓'
               : _urlStatus!),
         ],
+        if (_urlStatus == '') ...[
+          const SizedBox(height: 24),
+          const Text(
+            'Activate kiosk with cloud (optional)',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'After the API test succeeds, enter the one-time code from '
+            'vms-cloud so this tablet can report faults and send heartbeat.',
+            style: TextStyle(color: Colors.white38, fontSize: 12, height: 1.4),
+          ),
+          const SizedBox(height: 12),
+          CloudActivationPanel(onSaved: () => setState(() {})),
+        ],
+        const SizedBox(height: 16),
+        Center(
+          child: TextButton.icon(
+            onPressed: () => DemoModeScreen.enter(context),
+            icon: const Icon(Icons.school_outlined,
+                color: Colors.white54, size: 18),
+            label: const Text(
+              'Operator training (demo mode)',
+              style: TextStyle(color: Colors.white54, fontSize: 13),
+            ),
+          ),
+        ),
       ],
     );
   }

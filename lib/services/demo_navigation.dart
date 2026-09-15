@@ -18,7 +18,21 @@ Future<void> openDemoGuideDestination(
       await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => const SetupWizardScreen(isEditing: true),
+          builder: (_) => const SetupWizardScreen(
+            isEditing: true,
+            initialStep: 0,
+          ),
+        ),
+      );
+      return;
+    case DemoGuideDestination.setupWizardBackend:
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const SetupWizardScreen(
+            isEditing: true,
+            initialStep: 1,
+          ),
         ),
       );
       return;

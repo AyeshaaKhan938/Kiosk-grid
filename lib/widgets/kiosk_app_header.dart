@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/cart_service.dart';
+import '../theme/vmfs_brand_colors.dart';
 import 'kiosk_interactive.dart';
 import 'tap_scale.dart';
 
@@ -162,7 +163,7 @@ class _CartHeaderButton extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.all(5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFF6B35),
+                      color: VmfsBrandColors.cloudPrimary,
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 1.5),
                     ),
@@ -202,7 +203,7 @@ class MobileCartFab extends StatelessWidget {
           padding: const EdgeInsets.only(left: 8, bottom: 8),
           child: KioskFloatingActionButton.extended(
             heroTag: 'mobile_cart_fab',
-            backgroundColor: const Color(0xFFFF6B35),
+            backgroundColor: VmfsBrandColors.cloudPrimary,
             foregroundColor: Colors.white,
             onPressed: onTap,
             icon: const Icon(Icons.shopping_cart_outlined),

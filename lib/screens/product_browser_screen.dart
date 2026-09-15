@@ -66,7 +66,7 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
       title: 'PREMIUM SNACKS',
       subtitle: 'Over 15 snacks & candies to choose from',
       imageUrl: 'https://picsum.photos/seed/snacks-chips/1280/800',
-      color: Color(0xFFFF6B35),
+      color: Color(0xFF007ACC),
     ),
     _BannerSlide(
       title: 'COLD BEVERAGES',
@@ -519,8 +519,6 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
 
     return Scaffold(
       backgroundColor: bg,
-      floatingActionButton: MobileCartFab(onTap: _openCart),
-      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
       body: Column(
         children: [
           _buildHeader(cs: cs, primary: primary, pad: pad),
@@ -826,40 +824,86 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
     required Color bg,
     required double pad,
   }) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: pad, vertical: 8),
-      decoration: BoxDecoration(
-        color: bg,
-        border: Border(top: BorderSide(color: cs.onSurface.withValues(alpha: 0.12))),
-      ),
-      child: Row(
-        children: [
-          Semantics(
-            label: 'Go back to advertisements screen',
-            button: true,
-            child: GestureDetector(
-              onTap: _goBackToIdle,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: cs.onSurface.withValues(alpha: 0.04),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: cs.onSurface.withValues(alpha: 0.12)),
+    final compact = KioskAppHeader.isCompact(context);
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(pad, 8, pad, 8),
+        decoration: BoxDecoration(
+          color: bg,
+          border: Border(top: BorderSide(color: cs.onSurface.withValues(alpha: 0.12))),
+        ),
+        child: Row(
+          children: [
+            Semantics(
+              label: 'Go back to advertisements screen',
+              button: true,
+              child: GestureDetector(
+                onTap: _goBackToIdle,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: cs.onSurface.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: cs.onSurface.withValues(alpha: 0.12)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.arrow_back_ios_new_rounded,
+                        color: cs.onSurface.withValues(alpha: 0.65), size: 12),
+                    const SizedBox(width: 5),
+                    Text('Back to ads',
+                        style: TextStyle(
+                            color: cs.onSurface.withValues(alpha: 0.65), fontSize: 11)),
+                  ]),
                 ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.arrow_back_ios_new_rounded,
-                      color: cs.onSurface.withValues(alpha: 0.65), size: 12),
-                  const SizedBox(width: 5),
-                  Text('Back to ads',
-                      style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 11)),
-                ]),
               ),
             ),
-          ),
-          const Spacer(),
-          Text('VMFS USA © 2026',
-              style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 10)),
-        ],
+            const Spacer(),
+            if (compact)
+              ListenableBuilder(
+                listenable: CartService.instance,
+                builder: (context, _) {
+                  final count = CartService.instance.itemCount;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Semantics(
+                      label: 'Open cart',
+                      button: true,
+                      child: GestureDetector(
+                        onTap: _openCart,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: cs.primary,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.shopping_cart_outlined,
+                                  color: Colors.white, size: 16),
+                              const SizedBox(width: 6),
+                              Text(
+                                count > 0 ? 'Cart ($count)' : 'Cart',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            Text('VMFS USA © 2026',
+                style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 10)),
+          ],
+        ),
       ),
     );
   }
@@ -1563,7 +1607,7 @@ class _GridProductCard extends StatelessWidget {
                         const Spacer(),
                         if (!soldOut)
                           Material(
-                            color: const Color(0xFFFF6B35),
+                            color: primary,
                             borderRadius: BorderRadius.circular(10),
                             elevation: 1,
                             child: InkWell(

@@ -159,16 +159,36 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           _ManagementTokenPanel(onSaved: () => setState(() {})),
           const SizedBox(height: 20),
 
-          // ── Cloud device activation (issue reporting + heartbeat) ───
+          // Cloud activation lives on Setup Wizard → Backend (with API test),
+          // not on customer-facing shop screens.
           _buildSectionLabel('CLOUD DEVICE'),
           const SizedBox(height: 4),
           const Text(
-            'Activate this kiosk with a one-time code from vms-cloud admin '
-            'so hardware faults are reported automatically.',
+            'Link this tablet to vms-cloud on the Backend step — same screen '
+            'as API Test Connection (activation code after test succeeds).',
             style: TextStyle(color: Colors.white38, fontSize: 11),
           ),
           const SizedBox(height: 10),
-          _CloudActivationPanel(onSaved: () => setState(() {})),
+          _buildAction(
+            icon: Icons.cloud_done_outlined,
+            label: 'Cloud activation & API test',
+            subtitle: AppConfig.hasDeviceToken
+                ? 'Activated — reopen Backend step to change URL or re-link'
+                : 'Open Setup Wizard → Backend to test API and paste code',
+            color: const Color(0xFF007ACC),
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const SetupWizardScreen(
+                    isEditing: true,
+                    initialStep: 1,
+                  ),
+                ),
+              );
+              setState(() {});
+            },
+          ),
           const SizedBox(height: 20),
 
           if (AppConfig.lotteryEnabled) ...[
@@ -2479,208 +2499,6 @@ class _ManagementTokenPanelState extends State<_ManagementTokenPanel> {
                   style: TextStyle(fontSize: 11)),
             ),
           ],
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Cloud device activation (issue reporting + heartbeat)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _CloudActivationPanel extends StatefulWidget {
-  final VoidCallback onSaved;
-  const _CloudActivationPanel({required this.onSaved});
-
-  @override
-  State<_CloudActivationPanel> createState() => _CloudActivationPanelState();
-}
-
-class _CloudActivationPanelState extends State<_CloudActivationPanel> {
-  late final TextEditingController _codeCtrl;
-  bool _busy = false;
-  String? _message;
-  bool _isError = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _codeCtrl = TextEditingController();
-  }
-
-  @override
-  void dispose() {
-    _codeCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _activate() async {
-    final code = _codeCtrl.text.trim();
-    if (code.isEmpty) {
-      setState(() {
-        _message = 'Enter the activation code from vms-cloud admin.';
-        _isError = true;
-      });
-      return;
-    }
-
-    setState(() {
-      _busy = true;
-      _message = null;
-    });
-
-    final error = await KioskCloudService.instance.activate(
-      activationCode: code,
-    );
-
-    if (!mounted) return;
-
-    setState(() {
-      _busy = false;
-      if (error == null) {
-        _message = 'Activated — machine issue reporting is now enabled.';
-        _isError = false;
-        _codeCtrl.clear();
-      } else {
-        _message = error;
-        _isError = true;
-      }
-    });
-    widget.onSaved();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final activated = AppConfig.hasDeviceToken;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0D1B2A),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: activated
-              ? const Color(0xFF22C55E).withValues(alpha: 0.5)
-              : Colors.orange.withValues(alpha: 0.4),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Icon(
-              activated ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
-              color: activated ? const Color(0xFF22C55E) : Colors.orange,
-              size: 16,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                activated
-                    ? 'Cloud device activated (${AppConfig.deviceToken.substring(0, 8)}…)'
-                    : 'Not activated — faults stay local only',
-                style: TextStyle(
-                  color: activated ? Colors.white70 : Colors.orange,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ]),
-          if (!activated) ...[
-            const SizedBox(height: 14),
-            Row(children: [
-              Expanded(
-                child: TextField(
-                  controller: _codeCtrl,
-                  readOnly: true,
-                  showCursor: true,
-                  enableInteractiveSelection: false,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontFamily: 'monospace',
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'Activation code',
-                    hintStyle:
-                        const TextStyle(color: Colors.white24, fontSize: 13),
-                    filled: true,
-                    fillColor: const Color(0xFF060E18),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Colors.white12),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Colors.white12),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                  ),
-                  onTap: () => showKeypad(
-                    context,
-                    controller: _codeCtrl,
-                    mode: KeypadMode.alphanumeric,
-                    title: 'ACTIVATION CODE',
-                    hint: 'From vms-cloud → Machines → Activate kiosk',
-                    onCommitted: (_) => setState(() => _message = null),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              ElevatedButton(
-                onPressed: _busy ? null : _activate,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                child: _busy
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text(
-                        'Activate',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-              ),
-            ]),
-          ],
-          if (_message != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              _message!,
-              style: TextStyle(
-                color: _isError ? Colors.redAccent : const Color(0xFF22C55E),
-                fontSize: 11,
-                height: 1.4,
-              ),
-            ),
-          ],
-          const SizedBox(height: 8),
-          const Text(
-            'vms-cloud → Machines → select machine → Generate activation code.\n'
-            'Reports: dispense failures, board offline, elevator/pusher faults.',
-            style: TextStyle(color: Colors.white24, fontSize: 11, height: 1.5),
-          ),
         ],
       ),
     );

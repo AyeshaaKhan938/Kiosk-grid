@@ -13,7 +13,6 @@ import '../widgets/lottery_stock_shell.dart';
 import '../widgets/tap_scale.dart';
 import 'admin_config_screen.dart';
 import 'age_verification_screen.dart';
-import 'demo_mode/demo_mode_screen.dart';
 import 'product_browser_screen.dart';
 
 /// Pantalla idle/screensaver del kiosk.
@@ -49,7 +48,7 @@ class _IdleScreenState extends State<IdleScreen>
       title: 'PREMIUM SNACKS',
       subtitle: 'Over 15 snacks & candies to choose from',
       assetPath: 'assets/images/vmfs-logo.jpg',
-      gradientColors: [Color(0xFFFF6B35), Color(0xFF1A0A00)],
+      gradientColors: [Color(0xFF007ACC), Color(0xFF0A1628)],
     ),
     _DemoSlide(
       title: 'COLD BEVERAGES',
@@ -256,69 +255,32 @@ class _IdleScreenState extends State<IdleScreen>
             ),
 
             // Demo mode — training walkthrough (does not open admin by itself).
-            Positioned(
-              left: 12,
-              bottom: 12,
-              child: SafeArea(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (AppConfig.demoMode)
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF7C3AED),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text(
-                          'DEMO',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                      ),
-                    Material(
-                      color: const Color(0xFF007ACC).withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(12),
-                      child: InkWell(
-                        onTap: () => DemoModeScreen.enter(context),
-                        borderRadius: BorderRadius.circular(12),
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.school_outlined,
-                                  color: Colors.white, size: 20),
-                              SizedBox(width: 8),
-                              Text(
-                                'Switch to Demo',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+            if (AppConfig.demoMode)
+              Positioned(
+                left: 12,
+                bottom: 12,
+                child: SafeArea(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF7C3AED),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'DEMO',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        letterSpacing: 1,
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
