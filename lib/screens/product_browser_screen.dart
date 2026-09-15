@@ -824,12 +824,10 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
     required Color bg,
     required double pad,
   }) {
-    final compact = KioskAppHeader.isCompact(context);
-
     return SafeArea(
       top: false,
       child: Container(
-        padding: EdgeInsets.fromLTRB(pad, 8, pad, 8),
+        padding: EdgeInsets.fromLTRB(pad, 8, pad + 56, 8),
         decoration: BoxDecoration(
           color: bg,
           border: Border(top: BorderSide(color: cs.onSurface.withValues(alpha: 0.12))),
@@ -860,46 +858,6 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
               ),
             ),
             const Spacer(),
-            if (compact)
-              ListenableBuilder(
-                listenable: CartService.instance,
-                builder: (context, _) {
-                  final count = CartService.instance.itemCount;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Semantics(
-                      label: 'Open cart',
-                      button: true,
-                      child: GestureDetector(
-                        onTap: _openCart,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: cs.primary,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.shopping_cart_outlined,
-                                  color: Colors.white, size: 16),
-                              const SizedBox(width: 6),
-                              Text(
-                                count > 0 ? 'Cart ($count)' : 'Cart',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
             Text('VMFS USA © 2026',
                 style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 10)),
           ],
