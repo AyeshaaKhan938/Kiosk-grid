@@ -19,6 +19,8 @@ class UpdateInfo {
   final String? sha256;
   final int?   sizeBytes;
   final bool   mandatory;
+  /// When null, treat as true for backward compatibility with older cloud API.
+  final bool?  autoInstall;
   final String releaseNotes;
 
   const UpdateInfo.none()
@@ -29,6 +31,7 @@ class UpdateInfo {
         sha256       = null,
         sizeBytes    = null,
         mandatory    = false,
+        autoInstall  = null,
         releaseNotes = '';
 
   const UpdateInfo({
@@ -39,8 +42,13 @@ class UpdateInfo {
     required this.sha256,
     required this.sizeBytes,
     required this.mandatory,
+    required this.autoInstall,
     required this.releaseNotes,
   });
+
+  /// Cloud-controlled silent OTA when kiosk Admin → Auto-update is ON.
+  bool get shouldInstallSilently =>
+      autoInstall ?? true;
 }
 
 /// Manages remote APK updates from vms-cloud.
@@ -108,6 +116,9 @@ class UpdateService {
       sha256:       body['apk_sha256']?.toString(),
       sizeBytes:    (body['apk_size_bytes'] as num?)?.toInt(),
       mandatory:    body['mandatory'] == true,
+      autoInstall:  body.containsKey('auto_install')
+          ? body['auto_install'] == true
+          : null,
       releaseNotes: body['release_notes']?.toString() ?? '',
     );
   }

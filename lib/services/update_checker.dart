@@ -84,11 +84,19 @@ class UpdateChecker {
     return notifier.value;
   }
 
+  /// Idle-screen badge only when an operator must tap to install.
+  bool _showManualUpdateBadge(UpdateInfo info) {
+    if (!AppConfig.autoUpdate) return true;
+    return !info.shouldInstallSilently;
+  }
+
   Future<void> _runOnce() async {
     UpdateInfo info;
     try {
       info = await UpdateService.check();
-      notifier.value = info.available ? info : null;
+      notifier.value = info.available && _showManualUpdateBadge(info)
+          ? info
+          : null;
       if (info.available) {
         LogFileUtil.i('update.check.available', {
           'machine_no': AppConfig.machineNo,
@@ -104,6 +112,7 @@ class UpdateChecker {
 
     if (!info.available) return;
     if (!AppConfig.autoUpdate) return;
+    if (!info.shouldInstallSilently) return;
     if (_installing) return;
     if (_failedVersionCodes.contains(info.versionCode)) return;
 
