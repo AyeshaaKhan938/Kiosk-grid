@@ -43,13 +43,12 @@ class DemoGuideStep {
             coilOnlyNote: true,
             destination: DemoGuideDestination.adminSettings,
             bullets: [
-              'Admin Settings → DISPENSE HARDWARE → confirm protocol is '
-                  'Reyeah elevator (UART) or TCN serial for coil motors.',
-              'Use Test Dispense Slot with an empty coil to verify the motor '
+              'Admin Settings → DISPENSE HARDWARE → confirm Coil / spiral (TCN).',
+              'Use Test Coil Dispense with an empty coil to verify the motor '
                   'turns and product path is clear.',
-              'TCN boards: open TCN SERIAL / COIL → Query coils to read board status.',
-              'Do not use Calibrate Lift Platform on coil-only machines — that '
-                  'step is for elevator / multi-floor VMC units.',
+              'Open TCN SERIAL / COIL → Query coils to read board status.',
+              'Lift / VMC tools are hidden on coil cabinets — those apply only '
+                  'to Elevator (Reyeah UART / AFEN) machines.',
             ],
           )
         : DemoGuideStep(

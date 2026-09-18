@@ -4,7 +4,7 @@ import '../services/cart_service.dart';
 import '../services/purchase_service.dart';
 import '../utils/kiosk_page_transitions.dart';
 import '../widgets/kiosk_interactive.dart';
-import 'purchase_result_screen.dart';
+import 'payment_screen.dart';
 
 /// Shopping cart review + checkout.
 class CartScreen extends StatefulWidget {
@@ -18,39 +18,39 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> {
   final _cart = CartService.instance;
-  bool _checkingOut = false;
   String _error = '';
 
   Future<void> _checkout() async {
-    if (_cart.isEmpty || _checkingOut) return;
+    if (_cart.isEmpty) return;
 
-    setState(() { _checkingOut = true; _error = ''; });
+    final items = List<CartItem>.from(_cart.items);
+    final total = items.fold<double>(
+      0,
+      (sum, item) => sum + (item.slot.price * item.quantity),
+    );
+    final summary = items.length == 1
+        ? items.first.slot.productName
+        : '${items.length} items';
 
-    try {
-      final results = await PurchaseService.checkoutCart(
-        _cart.items,
-        ageVerificationSessionId: widget.ageVerificationSessionId,
-      );
-      if (!mounted) return;
-
-      _cart.clear();
-
-      Navigator.pushReplacement(
-        context,
-        kioskSlideRoute(
-          builder: (_) => PurchaseResultScreen(purchases: results),
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      kioskSlideRoute(
+        builder: (_) => PaymentScreen(
+          amount: total,
+          summary: summary,
+          completePurchase: (receipt) async {
+            final results = await PurchaseService.checkoutCart(
+              items,
+              ageVerificationSessionId: widget.ageVerificationSessionId,
+              payment: receipt,
+            );
+            _cart.clear();
+            return results;
+          },
         ),
-      );
-    } on PurchaseException catch (e) {
-      if (mounted) setState(() { _error = e.message; _checkingOut = false; });
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = 'Checkout failed. Check your connection.';
-          _checkingOut = false;
-        });
-      }
-    }
+      ),
+    );
   }
 
   @override
@@ -135,7 +135,7 @@ class _CartScreenState extends State<CartScreen> {
                       width: double.infinity,
                       height: 54,
                       child: KioskElevatedButton(
-                        onPressed: _checkingOut ? null : _checkout,
+                        onPressed: _checkout,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: cs.primary,
                           foregroundColor: cs.onPrimary,
@@ -143,15 +143,9 @@ class _CartScreenState extends State<CartScreen> {
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14)),
                         ),
-                        child: _checkingOut
-                            ? SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                    color: cs.onPrimary, strokeWidth: 2))
-                            : const Text('Buy',
-                                style: TextStyle(
-                                    fontSize: 17, fontWeight: FontWeight.bold)),
+                        child: const Text('Buy',
+                            style: TextStyle(
+                                fontSize: 17, fontWeight: FontWeight.bold)),
                       ),
                     ),
                   ],

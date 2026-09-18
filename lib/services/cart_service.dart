@@ -19,7 +19,7 @@ class CartService extends ChangeNotifier {
   bool get isEmpty => _items.isEmpty;
 
   void add(MachineSlot slot, {int quantity = 1}) {
-    if (!slot.isAvailable || slot.isOutOfStock) return;
+    if (!slot.isPurchasable) return;
 
     CartItem? existing;
     for (final i in _items) {

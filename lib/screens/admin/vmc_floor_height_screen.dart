@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../services/app_config.dart';
 import '../../services/vending_machine_service.dart';
+import '../../theme/admin_theme.dart';
+import '../../widgets/admin/admin_page_scaffold.dart';
 import '../../widgets/onscreen_keypad.dart';
 
 class VmcFloorHeightScreen extends StatefulWidget {
@@ -62,30 +64,22 @@ class _VmcFloorHeightScreenState extends State<VmcFloorHeightScreen> {
     final ctrl = TextEditingController(text: currentHeight.toString());
     final picked = await showDialog<int>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          'Set Floor $floor Height',
-          style: const TextStyle(color: Colors.white, fontSize: 17),
-        ),
-        content: TextField(
+      builder: (ctx) => AdminTheme.withLightTheme(
+        child: AlertDialog(
+          title: Text('Set floor $floor height'),
+          content: TextField(
           controller: ctrl,
           readOnly: true,
           showCursor: true,
           enableInteractiveSelection: false,
           keyboardType: TextInputType.number,
           textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.white, fontSize: 22),
-          decoration: InputDecoration(
+          style: const TextStyle(
+            color: AdminColors.textPrimary,
+            fontSize: 22,
+          ),
+          decoration: const InputDecoration(
             hintText: 'Height',
-            hintStyle: const TextStyle(color: Colors.white24),
-            filled: true,
-            fillColor: const Color(0xFF060E18),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Colors.white12),
-            ),
           ),
           onTap: () => showKeypad(
             ctx,
@@ -96,25 +90,21 @@ class _VmcFloorHeightScreenState extends State<VmcFloorHeightScreen> {
             hint: '0 - 65535',
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child:
-                const Text('Cancel', style: TextStyle(color: Colors.white38)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final value = int.tryParse(ctrl.text.trim());
-              if (value == null || value < 0 || value > 65535) return;
-              Navigator.pop(ctx, value);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF8E24AA),
-              foregroundColor: Colors.white,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
             ),
-            child: const Text('Save'),
-          ),
-        ],
+            FilledButton(
+              onPressed: () {
+                final value = int.tryParse(ctrl.text.trim());
+                if (value == null || value < 0 || value > 65535) return;
+                Navigator.pop(ctx, value);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
       ),
     );
 
@@ -135,15 +125,11 @@ class _VmcFloorHeightScreenState extends State<VmcFloorHeightScreen> {
   @override
   Widget build(BuildContext context) {
     final busy = _loading || _autoRunning;
-    return Scaffold(
-      backgroundColor: const Color(0xFF060E18),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0D1A2B),
-        foregroundColor: Colors.white,
-        title: const Text('Lift Floor Heights'),
-      ),
+    return AdminPageScaffold(
+      title: 'Lift floor heights',
+      subtitle: AppConfig.ttyPath,
+      leading: AdminPageScaffold.backLeading(context),
       body: ListView(
-        padding: const EdgeInsets.all(18),
         children: [
           _InfoPanel(status: _status, rawHex: _rawHex),
           const SizedBox(height: 14),
@@ -185,7 +171,7 @@ class _VmcFloorHeightScreenState extends State<VmcFloorHeightScreen> {
           else if (_heights.isEmpty)
             const Text(
               'No floor heights loaded.',
-              style: TextStyle(color: Colors.white38),
+              style: TextStyle(color: AdminColors.textMuted),
               textAlign: TextAlign.center,
             )
           else
@@ -215,28 +201,29 @@ class _InfoPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AdminSurfaceCard(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0D1A2B),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white12),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(status, style: const TextStyle(color: Colors.white70)),
+          Text(
+            status,
+            style: const TextStyle(
+              color: AdminColors.textSecondary,
+              height: 1.4,
+            ),
+          ),
           const SizedBox(height: 8),
           Text(
             'Port: ${AppConfig.ttyPath} @ 9600',
-            style: const TextStyle(color: Colors.white38, fontSize: 12),
+            style: const TextStyle(color: AdminColors.textMuted, fontSize: 12),
           ),
           if (rawHex != null) ...[
             const SizedBox(height: 8),
             Text(
               rawHex!,
               style: const TextStyle(
-                color: Colors.white38,
+                color: AdminColors.textMuted,
                 fontSize: 11,
                 fontFamily: 'monospace',
               ),
@@ -264,29 +251,32 @@ class _FloorHeightTile extends StatelessWidget {
     return SizedBox(
       width: 150,
       child: Material(
-        color: const Color(0xFF0D1A2B),
-        borderRadius: BorderRadius.circular(12),
+        color: AdminColors.card,
+        borderRadius: BorderRadius.circular(14),
         child: InkWell(
           onTap: onEdit,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           child: Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white12),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AdminColors.border),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'Floor $floor',
-                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  style: const TextStyle(
+                    color: AdminColors.textMuted,
+                    fontSize: 12,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   height.toString(),
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: AdminColors.textPrimary,
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
                   ),
@@ -294,7 +284,7 @@ class _FloorHeightTile extends StatelessWidget {
                 const SizedBox(height: 8),
                 const Text(
                   'Tap to edit',
-                  style: TextStyle(color: Color(0xFF8E24AA), fontSize: 11),
+                  style: TextStyle(color: Color(0xFF7C3AED), fontSize: 11),
                 ),
               ],
             ),

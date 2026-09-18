@@ -14,10 +14,11 @@ import 'services/kiosk_lockdown.dart';
 import 'services/local_kiosk_store.dart';
 import 'services/log_auto_uploader.dart';
 import 'services/log_file_util.dart';
+import 'services/cloud_cache_warmup.dart';
 import 'services/offline_sync_service.dart';
+import 'services/sensor_telemetry_service.dart';
 import 'services/update_checker.dart';
 import 'utils/web_reset.dart';
-import 'widgets/accessibility_fab.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,6 +42,9 @@ Future<void> main() async {
   await AppConfig.init();
   await LocalKioskStore.instance.init();
   await OfflineSyncService.instance.start();
+
+  // Refresh catalog + ads when online so offline mode has a recent snapshot.
+  warmCloudCacheIfOnline();
 
   // Web dev: open /?reset_setup=1 in the browser address bar (full page
   // load — terminal hot restart alone does not pass this query param).
@@ -84,6 +88,7 @@ Future<void> main() async {
   // then every 6 hours. The operator can flip this off via admin →
   // "Auto-upload logs" if logs ever need to stop flowing.
   LogAutoUploader.instance.start();
+  SensorTelemetryService.instance.start();
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   SystemChrome.setPreferredOrientations([
@@ -147,12 +152,7 @@ class _VMFSAppState extends State<VMFSApp> {
           data: mq.copyWith(
             textScaler: TextScaler.linear(scale),
           ),
-          child: Stack(
-            children: [
-              child!,
-              const AccessibilityFAB(),
-            ],
-          ),
+          child: child!,
         );
       },
       home: AppConfig.isConfigured

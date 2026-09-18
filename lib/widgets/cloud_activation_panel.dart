@@ -144,7 +144,7 @@ class _CloudActivationPanelState extends State<CloudActivationPanel> {
                     controller: _codeCtrl,
                     mode: KeypadMode.alphanumeric,
                     title: 'ACTIVATION CODE',
-                    hint: 'From vms-cloud → Machines → Activate kiosk',
+                    hint: 'From purchase order allocate serial, or machine view',
                     onCommitted: (_) => setState(() => _message = null),
                   ),
                 ),
@@ -195,8 +195,10 @@ class _CloudActivationPanelState extends State<CloudActivationPanel> {
           ],
           const SizedBox(height: 8),
           const Text(
-            'vms-cloud → Machines → select machine → Generate activation code.\n'
-            'Reports: dispense failures, board offline, elevator/pusher faults.',
+            'Cloud admin: Customer purchase orders → open order → '
+            '"Allocate machine serial" (code shown in notification).\n'
+            'Or: Machines → your machine → "Kiosk activation code" (if allocated).\n'
+            'Format: XXXX-XXXX · one-time · customer must confirm delivery first.',
             style: TextStyle(color: Colors.white24, fontSize: 11, height: 1.5),
           ),
         ],

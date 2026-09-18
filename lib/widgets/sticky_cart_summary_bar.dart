@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/cart_item.dart';
 import '../services/cart_service.dart';
 
-/// Sticky bottom bar: order summary always visible on the shop screen.
+/// Sticky bottom bar: order summary always visible on the grid shop screen.
 class StickyCartSummaryBar extends StatelessWidget {
   final VoidCallback onCheckout;
   final VoidCallback onViewCart;
@@ -25,73 +25,94 @@ class StickyCartSummaryBar extends StatelessWidget {
       listenable: CartService.instance,
       builder: (context, _) {
         final cart = CartService.instance;
-        if (cart.isEmpty) {
-          return const SizedBox.shrink();
-        }
-
+        final hasItems = !cart.isEmpty;
         final items = cart.items;
         final preview = items.take(2).toList();
         final extra = items.length - preview.length;
 
         return Material(
-          elevation: 12,
-          shadowColor: Colors.black.withValues(alpha: 0.25),
+          elevation: 16,
+          shadowColor: Colors.black.withValues(alpha: 0.28),
           color: cs.surface,
           child: SafeArea(
             top: false,
-            child: InkWell(
-              onTap: onViewCart,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                decoration: BoxDecoration(
-                  border: Border(
-                    top: BorderSide(color: primary.withValues(alpha: 0.35), width: 2),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    primary.withValues(alpha: hasItems ? 0.08 : 0.04),
+                    cs.surface,
+                  ],
+                ),
+                border: Border(
+                  top: BorderSide(
+                    color: primary.withValues(alpha: hasItems ? 0.5 : 0.22),
+                    width: 2,
                   ),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: primary.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Icon(Icons.shopping_cart_rounded, color: primary, size: 26),
-                          Positioned(
-                            top: 6,
-                            right: 6,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: primary,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                '${cart.itemCount}',
-                                style: TextStyle(
-                                  color: cs.onPrimary,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Material(
+                    color: primary.withValues(alpha: hasItems ? 0.14 : 0.08),
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      onTap: hasItems ? onViewCart : null,
+                      borderRadius: BorderRadius.circular(14),
+                      child: SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Icon(
+                              Icons.shopping_cart_rounded,
+                              color: primary.withValues(alpha: hasItems ? 1 : 0.45),
+                              size: 26,
+                            ),
+                            if (hasItems)
+                              Positioned(
+                                top: 6,
+                                right: 6,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: primary,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    '${cart.itemCount}',
+                                    style: TextStyle(
+                                      color: cs.onPrimary,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 14),
-                    Expanded(
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: hasItems ? onViewCart : null,
+                      behavior: HitTestBehavior.opaque,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            'Your order',
+                            hasItems ? 'Your order' : 'Order summary',
                             style: TextStyle(
                               color: cs.onSurface.withValues(alpha: 0.55),
                               fontSize: 11,
@@ -100,7 +121,20 @@ class StickyCartSummaryBar extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 4),
-                          ...preview.map((CartItem line) => Text(
+                          if (!hasItems)
+                            Text(
+                              'Tap a product or + to add items',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: cs.onSurface.withValues(alpha: 0.65),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            )
+                          else ...[
+                            ...preview.map(
+                              (CartItem line) => Text(
                                 '${line.quantity > 1 ? '${line.quantity}× ' : ''}${line.slot.productName}',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -109,58 +143,72 @@ class StickyCartSummaryBar extends StatelessWidget {
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                 ),
-                              )),
-                          if (extra > 0)
-                            Text(
-                              '+ $extra more item${extra == 1 ? '' : 's'}',
-                              style: TextStyle(
-                                color: cs.onSurface.withValues(alpha: 0.5),
-                                fontSize: 11,
                               ),
                             ),
+                            if (extra > 0)
+                              Text(
+                                '+ $extra more item${extra == 1 ? '' : 's'}',
+                                style: TextStyle(
+                                  color: cs.onSurface.withValues(alpha: 0.5),
+                                  fontSize: 11,
+                                ),
+                              ),
+                          ],
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _formatTotal(cart.subtotal),
-                          style: TextStyle(
-                            color: primary,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        Text(
-                          '${cart.itemCount} item${cart.itemCount == 1 ? '' : 's'}',
-                          style: TextStyle(
-                            color: cs.onSurface.withValues(alpha: 0.45),
-                            fontSize: 10,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 10),
-                    FilledButton(
-                      onPressed: onCheckout,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: primary,
-                        foregroundColor: cs.onPrimary,
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                  ),
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _formatTotal(hasItems ? cart.subtotal : 0),
+                        style: TextStyle(
+                          color: primary,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                      child: const Text(
-                        'Checkout',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      Text(
+                        hasItems
+                            ? '${cart.itemCount} item${cart.itemCount == 1 ? '' : 's'}'
+                            : 'Cart empty',
+                        style: TextStyle(
+                          color: cs.onSurface.withValues(alpha: 0.45),
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton(
+                    onPressed: hasItems ? onCheckout : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: primary,
+                      foregroundColor: cs.onPrimary,
+                      disabledBackgroundColor:
+                          cs.onSurface.withValues(alpha: 0.12),
+                      disabledForegroundColor:
+                          cs.onSurface.withValues(alpha: 0.35),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 14,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                  ],
-                ),
+                    child: const Text(
+                      'Checkout',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

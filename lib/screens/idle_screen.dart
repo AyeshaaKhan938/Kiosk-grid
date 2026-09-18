@@ -6,9 +6,11 @@ import '../models/advertisement.dart';
 import '../utils/ad_media.dart';
 import '../services/advertisement_service.dart';
 import '../services/app_config.dart';
+import '../services/local_kiosk_store.dart';
 import '../services/update_checker.dart';
 import '../services/update_service.dart';
 import '../utils/kiosk_page_transitions.dart';
+import '../widgets/kiosk_app_header.dart';
 import '../widgets/lottery_stock_shell.dart';
 import '../widgets/tap_scale.dart';
 import 'admin_config_screen.dart';
@@ -102,6 +104,7 @@ class _IdleScreenState extends State<IdleScreen>
       duration: const Duration(seconds: 2),
     )..repeat();
 
+    _hydrateAdsFromDisk();
     _loadAds();
     // Re-poll the ads endpoint every 2 minutes with the in-memory cache
     // bypassed, so an ad updated in vms-cloud admin shows up on the
@@ -125,6 +128,20 @@ class _IdleScreenState extends State<IdleScreen>
     _slideTextCtrl.dispose();
     _shimmerCtrl.dispose();
     super.dispose();
+  }
+
+  void _hydrateAdsFromDisk() {
+    final ads = LocalKioskStore.instance.loadAdvertisements();
+    if (ads.isEmpty) return;
+
+    final seen = <int>{};
+    final all = <Advertisement>[
+      for (final ad in [...ads.screensaver, ...ads.top])
+        if (seen.add(ad.id)) ad,
+    ];
+    if (all.isNotEmpty) {
+      _backendAds = all;
+    }
   }
 
   Future<void> _loadAds({bool forceRefresh = false}) async {
@@ -235,11 +252,23 @@ class _IdleScreenState extends State<IdleScreen>
               ),
             ),
 
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: KioskAppHeader(
+                title: 'VMFS USA',
+                subtitle: 'Touch to shop',
+                onLogoTap: _onSecretTap,
+                showAccessibility: true,
+              ),
+            ),
+
             // Update-available badge — top-right, only visible when
             // UpdateChecker has discovered a new APK. Tapping it opens
             // the admin PIN flow so the operator can review/install.
             Positioned(
-              top: 12, right: 12,
+              top: 72, right: 12,
               child: SafeArea(
                 child: ValueListenableBuilder<UpdateInfo?>(
                   valueListenable: UpdateChecker.instance.notifier,

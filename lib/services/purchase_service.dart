@@ -1,5 +1,6 @@
 import '../models/cart_item.dart';
 import '../models/machine_slot.dart';
+import '../models/payment_receipt.dart';
 import 'api_service.dart';
 import 'app_config.dart';
 import 'reyeah_service.dart';
@@ -26,30 +27,43 @@ class PurchaseException implements Exception {
   String toString() => message;
 }
 
-/// Creates a cloud order + verifies payment before the motor fires.
+/// Creates a cloud order after local payment succeeds, then the motor fires.
 class PurchaseService {
   /// Single-item checkout (Buy Now from detail or one cart line).
   static Future<PurchaseResult> checkoutItem(
     MachineSlot slot, {
     String? ageVerificationSessionId,
+    PaymentReceipt? payment,
   }) async {
-    if (!slot.isAvailable || slot.isOutOfStock) {
+    if (!slot.isPurchasable) {
       throw const PurchaseException('This product is out of stock.');
     }
 
-    if (AppConfig.backendMode == 'reyeah') {
-      return _checkoutReyeah(slot);
+    if (payment == null) {
+      throw const PurchaseException(
+        'Payment is required before vending.',
+      );
     }
-    return _checkoutVmsCloud(slot, ageVerificationSessionId);
+
+    if (AppConfig.backendMode == 'reyeah') {
+      return _checkoutReyeah(slot, payment);
+    }
+    return _checkoutVmsCloud(slot, ageVerificationSessionId, payment);
   }
 
   /// Multi-item cart — one order + dispense per line (typical vending pattern).
   static Future<List<PurchaseResult>> checkoutCart(
     List<CartItem> items, {
     String? ageVerificationSessionId,
+    PaymentReceipt? payment,
   }) async {
     if (items.isEmpty) {
       throw const PurchaseException('Your cart is empty.');
+    }
+    if (payment == null) {
+      throw const PurchaseException(
+        'Payment is required before vending.',
+      );
     }
 
     final results = <PurchaseResult>[];
@@ -58,13 +72,17 @@ class PurchaseService {
         results.add(await checkoutItem(
           item.slot,
           ageVerificationSessionId: ageVerificationSessionId,
+          payment: payment,
         ));
       }
     }
     return results;
   }
 
-  static Future<PurchaseResult> _checkoutReyeah(MachineSlot slot) async {
+  static Future<PurchaseResult> _checkoutReyeah(
+    MachineSlot slot,
+    PaymentReceipt payment,
+  ) async {
     final externalId = slot.externalId;
     if (externalId == null || externalId.isEmpty) {
       throw const PurchaseException(
@@ -80,13 +98,14 @@ class PurchaseService {
       orderId: orderNo,
       slot: slot,
       amount: slot.price,
-      paymentMethod: 'reyeah',
+      paymentMethod: payment.method,
     );
   }
 
   static Future<PurchaseResult> _checkoutVmsCloud(
     MachineSlot slot,
     String? ageVerificationSessionId,
+    PaymentReceipt payment,
   ) async {
     try {
       final order = await ApiService.createPurchaseOrder(
@@ -94,6 +113,8 @@ class PurchaseService {
         amount: slot.price,
         productName: slot.productName,
         ageVerificationSessionId: ageVerificationSessionId,
+        paymentMethod: payment.method,
+        paymentReference: payment.reference,
       );
 
       if (order.paymentVerified != true) {
@@ -106,7 +127,7 @@ class PurchaseService {
         orderId: order.orderId,
         slot: slot,
         amount: slot.price,
-        paymentMethod: order.paymentMethod ?? 'card',
+        paymentMethod: payment.method,
       );
     } on PurchaseOrderException catch (e) {
       throw PurchaseException(e.message);

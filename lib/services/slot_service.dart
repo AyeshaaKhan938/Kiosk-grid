@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/machine_slot.dart';
 import 'app_config.dart';
+import 'kiosk_device_auth.dart';
 import 'local_kiosk_store.dart';
+import 'offline_sync_service.dart';
 import 'reyeah_service.dart';
 
 /// Obtiene el inventario de slots de la máquina.
@@ -13,6 +15,13 @@ import 'reyeah_service.dart';
 class SlotService {
   static String get _baseUrl   => AppConfig.apiBaseUrl;
   static String get _machineNo => AppConfig.machineNo;
+
+  /// Last saved customer-facing catalog (no network). Use for instant UI paint.
+  static MachineSlotsResponse? peekCustomerCatalog() {
+    final local = LocalKioskStore.instance.loadSlotsCatalog();
+    if (local == null) return null;
+    return _customerCatalog(local);
+  }
 
   /// Devuelve la lista de slots con productos disponibles.
   /// Lanza excepción si la máquina no existe o hay error de red.
@@ -68,35 +77,69 @@ class SlotService {
     });
   }
 
+  static MachineSlotsResponse _customerCatalog(MachineSlotsResponse raw) {
+    final slots =
+        raw.slots.where((s) => s.isListedInShop).toList(growable: false);
+    return MachineSlotsResponse(
+      machineNumber: raw.machineNumber,
+      machineName: raw.machineName,
+      slots: slots,
+      categories: raw.categories,
+    );
+  }
+
   static Future<MachineSlotsResponse> _loadLocalOrRethrow() async {
     final local = LocalKioskStore.instance.loadSlotsCatalog();
-    if (local != null) return local;
-    await LocalKioskStore.instance.seedEmptyIfNeeded();
-    return LocalKioskStore.instance.loadSlotsCatalog() ??
-        (throw Exception('Could not connect to server'));
+    if (local != null) {
+      return _customerCatalog(local);
+    }
+    throw Exception('catalog_offline');
+  }
+
+  static bool _mustNotUseOfflineFallback(Object error) {
+    final s = error.toString();
+    return s.contains('device_token_required') || s.contains('machine_not_found');
   }
 
   // ── vms-cloud (Laravel) ────────────────────────────────────────────────────
 
   static Future<MachineSlotsResponse> _fetchFromVmsCloud([String? machineNo]) async {
+    final cached = peekCustomerCatalog();
+
+    if (!kioskHasDeviceAuth) {
+      throw Exception('device_token_required');
+    }
+
+    final online = await OfflineSyncService.instance.isCloudReachable();
+    if (!online) {
+      if (cached != null) return cached;
+      throw Exception('catalog_offline');
+    }
+
     final no  = machineNo ?? _machineNo;
     final url = Uri.parse('$_baseUrl/machines/$no/slots');
 
     try {
       final response = await http
-          .get(url, headers: {'Accept': 'application/json'})
+          .get(url, headers: kioskDeviceAuthHeaders())
           .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
         await LocalKioskStore.instance.saveSlotsCatalog(json);
-        return MachineSlotsResponse.fromJson(json);
+        return _customerCatalog(MachineSlotsResponse.fromJson(json));
+      } else if (response.statusCode == 401) {
+        throw Exception('device_token_required');
       } else if (response.statusCode == 404) {
         throw Exception('machine_not_found');
       } else {
         throw Exception('Server error: ${response.statusCode}');
       }
-    } catch (_) {
+    } catch (e) {
+      if (_mustNotUseOfflineFallback(e)) {
+        rethrow;
+      }
+      if (cached != null) return cached;
       return _loadLocalOrRethrow();
     }
   }

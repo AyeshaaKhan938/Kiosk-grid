@@ -1,19 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../theme/vmfs_brand_colors.dart';
+
 /// Configuración de accesibilidad — singleton que notifica cambios a toda la app.
 class AccessibilitySettings extends ChangeNotifier {
   static final AccessibilitySettings instance = AccessibilitySettings._();
   AccessibilitySettings._();
 
-  // ── Estado ──────────────────────────────────────────────────────────────────
-
-  double _textScale   = 1.0;   // 1.0 | 1.25 | 1.5
+  double _textScale   = 1.0;
   bool   _highContrast = false;
 
   double get textScale    => _textScale;
   bool   get highContrast => _highContrast;
-
-  // ── Acciones ─────────────────────────────────────────────────────────────────
 
   void setTextScale(double scale) {
     if (_textScale == scale) return;
@@ -26,11 +24,10 @@ class AccessibilitySettings extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Tema dinámico ─────────────────────────────────────────────────────────────
-
   ThemeData buildTheme() {
     if (_highContrast) {
       return ThemeData(
+        useMaterial3: true,
         colorScheme: const ColorScheme.dark(
           primary:                  Color(0xFFFFD700),
           onPrimary:                Colors.black,
@@ -61,34 +58,62 @@ class AccessibilitySettings extends ChangeNotifier {
         ),
       );
     }
+
+    const primary = VmfsBrandColors.cloudPrimary;
     return ThemeData(
+      useMaterial3: true,
       colorScheme: const ColorScheme.light(
-        primary:                  Color(0xFF007ACC),
+        primary:                  primary,
         onPrimary:                Colors.white,
         surface:                  Colors.white,
-        onSurface:                Colors.black87,
-        surfaceContainerHighest:  Color(0xFFF5F7FA),
-        secondary:                Color(0xFF007ACC),
+        onSurface:                Color(0xFF0F172A),
+        surfaceContainerHighest:  VmfsBrandColors.cloudSurface,
+        secondary:                VmfsBrandColors.cloudPrimaryDark,
         onSecondary:              Colors.white,
-        error:                    Colors.redAccent,
+        error:                    Color(0xFFDC2626),
         onError:                  Colors.white,
+        outline:                  VmfsBrandColors.cloudBorder,
       ),
-      scaffoldBackgroundColor: Colors.white,
+      scaffoldBackgroundColor: VmfsBrandColors.cloudSurface,
       fontFamily: 'Roboto',
-      dividerColor: Colors.black12,
+      dividerColor: VmfsBrandColors.cloudBorder,
+      cardTheme: CardThemeData(
+        elevation: 0,
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: VmfsBrandColors.cloudBorder),
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        side: const BorderSide(color: VmfsBrandColors.cloudBorder),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: primary,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+      ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF007ACC),
+          backgroundColor: primary,
           foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.black54,
-          side: const BorderSide(color: Colors.black26),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          foregroundColor: primary,
+          side: const BorderSide(color: primary, width: 1.5),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }

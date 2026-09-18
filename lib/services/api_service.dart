@@ -242,6 +242,8 @@ class ApiService {
     required double amount,
     required String productName,
     String? ageVerificationSessionId,
+    String paymentMethod = 'card',
+    String? paymentReference,
   }) async {
     final url = Uri.parse('$_baseUrl/orders');
     final payload = <String, dynamic>{
@@ -249,8 +251,11 @@ class ApiService {
       'line_number':  lineNumber,
       'amount':       amount,
       'product_name': productName,
-      'payment_method': 'card',
+      'payment_method': paymentMethod,
     };
+    if (paymentReference != null && paymentReference.isNotEmpty) {
+      payload['payment_reference'] = paymentReference;
+    }
     if (ageVerificationSessionId != null &&
         ageVerificationSessionId.isNotEmpty) {
       payload['age_verification_session_id'] = ageVerificationSessionId;

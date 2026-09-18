@@ -71,6 +71,27 @@ class MachineSlot {
 
   bool get isOutOfStock => currentStock == 0;
 
+  bool get hasAssignedProduct => productId != null;
+
+  /// Offline/admin seed rows — not real catalog items from vms-cloud.
+  bool get isPlaceholderSlot {
+    if (hasAssignedProduct) {
+      return false;
+    }
+    final name = productName.trim().toLowerCase();
+    return name == 'empty slot' || name.isEmpty || name == 'product';
+  }
+
+  /// Customer grid — only slots with a product from cloud.
+  bool get isListedInShop => hasAssignedProduct && !isPlaceholderSlot;
+
+  /// Trust live stock on the slot; do not treat stale `is_available` as sold out.
+  bool get isShopInStock => isListedInShop && currentStock > 0 && !isFault;
+
+  bool get isPurchasable => isShopInStock;
+
+  bool get showSoldOutBadge => isListedInShop && (isOutOfStock || isFault);
+
   String get priceFormatted => '\$${price.toStringAsFixed(2)}';
 
   /// Todas las imágenes del producto: main_image primero, luego media_expansions.

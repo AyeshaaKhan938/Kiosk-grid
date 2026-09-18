@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/advertisement.dart';
 import 'app_config.dart';
+import 'kiosk_device_auth.dart';
 import 'local_kiosk_store.dart';
 import 'offline_sync_service.dart';
 
@@ -58,13 +59,12 @@ class AdvertisementService {
     debugPrint('[ads] GET $url');
 
     try {
-      await OfflineSyncService.instance.refreshConnectivity();
-      if (!OfflineSyncService.instance.isOnline) {
+      if (!await OfflineSyncService.instance.isCloudReachable()) {
         return _localOrCache();
       }
 
       final response = await http
-          .get(url, headers: {'Accept': 'application/json'})
+          .get(url, headers: kioskDeviceAuthHeaders())
           .timeout(const Duration(seconds: 8));
 
       debugPrint('[ads] HTTP ${response.statusCode}, '

@@ -262,6 +262,9 @@ class MainActivity : FlutterActivity() {
         // the CPU isn't suspended mid-motor-turn or mid-download.
         WakeLockChannel(applicationContext, flutterEngine)
 
+        // Contaloupe / Nayax card readers + bill/coin acceptor bridge.
+        PaymentChannel(applicationContext, flutterEngine)
+
         // Foreground priority anchor. Keeps the process alive even when
         // Android's low-memory killer would normally reap a background
         // app. The notification is hidden under our immersive bar so

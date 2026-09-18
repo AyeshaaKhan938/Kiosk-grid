@@ -4,6 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'app_config.dart';
+import 'kiosk_device_auth.dart';
+import 'local_kiosk_store.dart';
+import 'offline_sync_service.dart';
 
 /// Snapshot of "is the lottery currently runnable on this machine"
 /// from vms-cloud. Returned by [LotteryAvailabilityService.check].
@@ -44,9 +47,34 @@ class LotteryAvailabilityService {
   LotteryAvailabilityService._();
 
   static Future<LotteryAvailability> check() async {
+    if (!await OfflineSyncService.instance.isCloudReachable()) {
+      final local = _fromLocalCatalog();
+      if (local != null) return local;
+      return const LotteryAvailability.failOpen();
+    }
+
     final dedicated = await _checkDedicatedEndpoint();
     if (dedicated != null) return dedicated;
     return _checkFromSlots();
+  }
+
+  /// Offline / cached slot snapshot — same math as [_checkFromSlots].
+  static LotteryAvailability? _fromLocalCatalog() {
+    final catalog = LocalKioskStore.instance.loadSlotsCatalog();
+    if (catalog == null) return null;
+
+    var inStock = 0;
+    var capacity = 0;
+    for (final slot in catalog.slots) {
+      inStock += slot.currentStock;
+      capacity += slot.maxStock;
+    }
+
+    return LotteryAvailability(
+      available: inStock > 0,
+      inStockCount: inStock,
+      totalCapacity: capacity,
+    );
   }
 
   /// Try the (currently non-existent) dedicated availability endpoint.
@@ -107,7 +135,7 @@ class LotteryAvailabilityService {
     );
     try {
       final r = await http
-          .get(url, headers: {'Accept': 'application/json'})
+          .get(url, headers: kioskDeviceAuthHeaders())
           .timeout(const Duration(seconds: 8));
 
       if (r.statusCode == 200) {
@@ -131,6 +159,8 @@ class LotteryAvailabilityService {
       debugPrint('[availability] slots HTTP ${r.statusCode}, failing open');
       return const LotteryAvailability.failOpen();
     } catch (e) {
+      final local = _fromLocalCatalog();
+      if (local != null) return local;
       debugPrint('[availability] slots check failed: $e — failing open');
       return const LotteryAvailability.failOpen();
     }

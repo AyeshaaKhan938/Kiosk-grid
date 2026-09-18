@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import 'admin_dashboard_screen.dart';
+import 'admin_hardware_screen.dart';
 import 'admin_inventory_screen.dart';
 import 'admin_local_ads_screen.dart';
 import 'admin_orders_screen.dart';
@@ -7,9 +9,10 @@ import 'admin_products_screen.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/local_kiosk_store.dart';
 import '../../services/offline_sync_service.dart';
+import '../../theme/admin_theme.dart';
+import '../../widgets/admin/admin_page_scaffold.dart';
 
-/// Shell del panel admin con barra de navegación inferior.
-/// Accesible desde AdminConfigScreen tras autenticación con PIN.
+/// Admin panel shell with bottom navigation.
 class AdminShellScreen extends StatefulWidget {
   const AdminShellScreen({super.key, this.initialTab = 0});
 
@@ -28,35 +31,46 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
     AdminOrdersScreen(),
     AdminProductsScreen(),
     AdminLocalAdsScreen(),
+    AdminHardwareScreen(),
   ];
 
-  static const _items = [
-    BottomNavigationBarItem(
-      icon: Icon(Icons.dashboard_rounded),
+  static const _destinations = [
+    NavigationDestination(
+      icon: Icon(Icons.dashboard_outlined),
+      selectedIcon: Icon(Icons.dashboard_rounded),
       label: 'Dashboard',
     ),
-    BottomNavigationBarItem(
-      icon: Icon(Icons.inventory_2_rounded),
+    NavigationDestination(
+      icon: Icon(Icons.inventory_2_outlined),
+      selectedIcon: Icon(Icons.inventory_2_rounded),
       label: 'Inventory',
     ),
-    BottomNavigationBarItem(
-      icon: Icon(Icons.receipt_long_rounded),
+    NavigationDestination(
+      icon: Icon(Icons.receipt_long_outlined),
+      selectedIcon: Icon(Icons.receipt_long_rounded),
       label: 'Orders',
     ),
-    BottomNavigationBarItem(
-      icon: Icon(Icons.storefront_rounded),
+    NavigationDestination(
+      icon: Icon(Icons.storefront_outlined),
+      selectedIcon: Icon(Icons.storefront_rounded),
       label: 'Products',
     ),
-    BottomNavigationBarItem(
-      icon: Icon(Icons.campaign_rounded),
+    NavigationDestination(
+      icon: Icon(Icons.campaign_outlined),
+      selectedIcon: Icon(Icons.campaign_rounded),
       label: 'Ads',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.precision_manufacturing_outlined),
+      selectedIcon: Icon(Icons.precision_manufacturing_rounded),
+      label: 'Hardware',
     ),
   ];
 
   @override
   void initState() {
     super.initState();
-    _index = widget.initialTab.clamp(0, 4);
+    _index = widget.initialTab.clamp(0, 5);
     _ensureLocalSnapshot();
   }
 
@@ -69,82 +83,77 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cs  = Theme.of(context).colorScheme;
-    final bg  = Theme.of(context).scaffoldBackgroundColor;
     final online = OfflineSyncService.instance.isOnline;
     final pending = LocalKioskStore.instance.pendingMutationCount;
 
     if (!AdminApiService.canUseLocalAdmin) {
-      return Scaffold(
-        backgroundColor: bg,
-        appBar: AppBar(
-          backgroundColor: cs.primary,
-          foregroundColor: cs.onPrimary,
-          title: const Text(
-            'Admin Panel',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+      return AdminTheme.withLightTheme(
+        child: Scaffold(
+          backgroundColor: AdminColors.canvas,
+          appBar: AdminShellAppBar(
+            title: 'Admin panel',
+            onBack: () => Navigator.of(context).pop(),
           ),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_rounded),
-            onPressed: () => Navigator.of(context).pop(),
-            tooltip: 'Back',
-          ),
+          body: _NoTokenView(onConfigure: () => Navigator.of(context).pop()),
         ),
-        body: _NoTokenView(onConfigure: () => Navigator.of(context).pop()),
       );
     }
 
-    return Scaffold(
-      backgroundColor: bg,
-      appBar: AppBar(
-        backgroundColor: cs.primary,
-        foregroundColor: cs.onPrimary,
-        title: Text(
-          _titles[_index],
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => Navigator.of(context).pop(),
-          tooltip: 'Back',
-        ),
-        actions: [
-          if (!online)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Chip(
-                avatar: Icon(Icons.cloud_off_rounded,
-                    size: 16, color: cs.onPrimary),
-                label: Text(
-                  pending > 0 ? 'Offline · $pending pending' : 'Offline',
-                  style: TextStyle(color: cs.onPrimary, fontSize: 11),
+    return AdminTheme.withLightTheme(
+      child: Scaffold(
+        backgroundColor: AdminColors.canvas,
+        appBar: AdminShellAppBar(
+          title: _titles[_index],
+          onBack: () => Navigator.of(context).pop(),
+          actions: [
+            if (!online)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.cloud_off_rounded,
+                          size: 14,
+                          color: Colors.white.withValues(alpha: 0.95),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          pending > 0 ? 'Offline · $pending' : 'Offline',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.95),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                backgroundColor: cs.onPrimary.withValues(alpha: 0.15),
-                side: BorderSide.none,
-                visualDensity: VisualDensity.compact,
               ),
-            ),
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Icon(Icons.admin_panel_settings_rounded,
-                color: cs.onPrimary.withValues(alpha: 0.7)),
-          ),
-        ],
-      ),
-      body: IndexedStack(index: _index, children: _screens),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex:    _index,
-        onTap:           (i) => setState(() => _index = i),
-        type:            BottomNavigationBarType.fixed,
-        backgroundColor: cs.surface,
-        selectedItemColor:   cs.primary,
-        unselectedItemColor: cs.onSurface.withValues(alpha: 0.5),
-        selectedLabelStyle:  const TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 10,
+          ],
         ),
-        unselectedLabelStyle: const TextStyle(fontSize: 10),
-        items: _items,
+        body: IndexedStack(index: _index, children: _screens),
+        bottomNavigationBar: AdminBottomChrome(
+          child: NavigationBar(
+            selectedIndex: _index,
+            onDestinationSelected: (i) => setState(() => _index = i),
+            destinations: _destinations,
+          ),
+        ),
       ),
     );
   }
@@ -155,10 +164,9 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
     'Orders',
     'Products',
     'Ads',
+    'Hardware',
   ];
 }
-
-// ── No-token placeholder ─────────────────────────────────────────────────────
 
 class _NoTokenView extends StatelessWidget {
   const _NoTokenView({required this.onConfigure});
@@ -166,55 +174,57 @@ class _NoTokenView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs  = Theme.of(context).colorScheme;
-    final tt  = Theme.of(context).textTheme;
-
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: cs.errorContainer.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
+        child: AdminSurfaceCard(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AdminColors.danger.withValues(alpha: 0.08),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.key_off_rounded,
+                  size: 40,
+                  color: AdminColors.danger,
+                ),
               ),
-              child: Icon(Icons.key_off_rounded,
-                  size: 56, color: cs.error),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Admin Not Available',
-              style: tt.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: cs.onSurface,
+              const SizedBox(height: 20),
+              const Text(
+                'Admin not available',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                  color: AdminColors.textPrimary,
+                ),
+                textAlign: TextAlign.center,
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Connect to vms-cloud once to download catalog data, or set a '
-              'management API token in Settings.',
-              style: tt.bodyMedium?.copyWith(
-                color: cs.onSurface.withValues(alpha: 0.65),
-                height: 1.5,
+              const SizedBox(height: 10),
+              const Text(
+                'Connect to vms-cloud once to download catalog data, or set a '
+                'management API token in Settings.',
+                style: TextStyle(
+                  color: AdminColors.textSecondary,
+                  height: 1.5,
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 32),
-            FilledButton.icon(
-              onPressed: onConfigure,
-              icon: const Icon(Icons.settings_rounded),
-              label: const Text('Go to Settings'),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(220, 48),
-                textStyle: const TextStyle(
-                    fontWeight: FontWeight.w600, fontSize: 15),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: onConfigure,
+                icon: const Icon(Icons.settings_rounded),
+                label: const Text('Go to Settings'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(220, 48),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

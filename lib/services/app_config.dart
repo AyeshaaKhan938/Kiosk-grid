@@ -5,6 +5,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/machine_mechanism.dart';
+
 /// Configuración central de la app.
 ///
 /// Prioridad de lectura:
@@ -47,7 +49,7 @@ class AppConfig {
   // Cloud backend: 'vmscloud' | 'reyeah' (legacy, hidden from UI)
   static const _kBackendMode = 'cfg_backend_mode';
 
-  // Physical dispense protocol: 'uart' | 'tcn' | 'afen'
+  // Physical dispense protocol: 'uart' | 'conveyor' | 'tcn' | 'afen' | 'bket'
   static const _kHardwareProtocol = 'cfg_hardware_protocol';
 
   // AFEN Open Platform REST + VMC FunCode
@@ -77,6 +79,13 @@ class AppConfig {
   // Age verification — customer scans QR, uploads ID on phone, backend verifies 18+.
   static const _kAgeVerificationEnabled = 'cfg_age_verification_enabled';
   static const _kAgeVerificationWebBase = 'cfg_age_verification_web_base';
+
+  // Customer payment before vend: card reader + bill/coin acceptor.
+  static const _kPaymentCardProvider = 'cfg_payment_card_provider';
+  static const _kPaymentCardEnabled = 'cfg_payment_card_enabled';
+  static const _kPaymentCashEnabled = 'cfg_payment_cash_enabled';
+  static const _kSimulatePayment = 'cfg_simulate_payment';
+  static const _kCashSimulateButtons = 'cfg_cash_simulate_buttons';
 
   // TTY serial — path of the Reyeah Control Board's UART device on the tablet.
   // Default /dev/ttyS0 covers most Reyeah T1-02 mainboards; admin can override
@@ -381,36 +390,118 @@ static String get ttyPathLift =>
       _prefs?.setString(_kBackendMode, mode);
 
   /// Physical motor / coil dispense protocol after a purchase is verified.
-  ///   'uart'  → standard control board over serial (Reyeah/VMFS frames)
-  ///   'tcn'   → TCN Android board serial commands
-  ///   'afen'  → UART motor + AFEN FunCode VMC authorize/feedback
-  ///   'bket'  → SMG-S400 AI cooler — door unlock + dual-camera session
+  ///   'uart'     → Reyeah elevator / lift (UART frames + VMC lift recovery)
+  ///   'conveyor' → belt/pusher lanes over UART frames (no lift tools)
+  ///   'tcn'      → TCN Android board spiral / coil commands
+  ///   'afen'     → UART motor + AFEN FunCode VMC authorize/feedback (elevator)
+  ///   'bket'     → SMG-S400 AI cooler — door unlock + dual-camera session
   static String get hardwareProtocol =>
       _prefs?.getString(_kHardwareProtocol) ?? 'uart';
 
   static Future<void> setHardwareProtocol(String protocol) async =>
       _prefs?.setString(_kHardwareProtocol, protocol);
 
+  /// Cabinet delivery style — auto-detected from [hardwareProtocol].
+  /// Admin test tools are filtered by this so elevator options never
+  /// appear on coil / conveyor cabinets (and vice versa).
+  static MachineMechanism get machineMechanism =>
+      MachineMechanism.fromHardwareProtocol(hardwareProtocol);
+
   static String get hardwareProtocolLabel {
     switch (hardwareProtocol) {
       case 'tcn':
-        return 'TCN serial';
+        return 'Coil / spiral (TCN serial)';
+      case 'conveyor':
+        return 'Conveyor belt (UART)';
       case 'afen':
-        return 'AFEN VMC';
+        return 'Elevator (AFEN VMC)';
       case 'bket':
         return 'AI cooler (BKX16 / SMG-S400)';
       default:
-        return 'Reyeah elevator (UART)';
+        return 'Elevator (Reyeah UART)';
     }
   }
 
+  static bool get isElevatorMachine =>
+      machineMechanism == MachineMechanism.elevator;
+
+  static bool get isCoilMachine => machineMechanism == MachineMechanism.coil;
+
+  static bool get isConveyorMachine =>
+      machineMechanism == MachineMechanism.conveyor;
+
   static bool get isReyeahUartVend => hardwareProtocol == 'uart';
+
+  static bool get isConveyorVend => hardwareProtocol == 'conveyor';
+
+  /// UART delivery frames (elevator Reyeah, conveyor, or AFEN motor path).
+  static bool get usesUartDeliveryFrames =>
+      isReyeahUartVend || isConveyorVend || isAfenVend;
 
   static bool get isTcnVend => hardwareProtocol == 'tcn';
 
   static bool get isAfenVend => hardwareProtocol == 'afen';
 
   static bool get isBketCooler => hardwareProtocol == 'bket';
+
+  // ── Payment terminal (Contaloupe / Nayax / cash) ─────────────────────────
+
+  /// Card reader brand used when the customer pays by card.
+  /// `simulate` | `nayax` | `contaloupe`
+  static String get paymentCardProvider =>
+      _prefs?.getString(_kPaymentCardProvider) ?? 'simulate';
+
+  static Future<void> setPaymentCardProvider(String provider) async =>
+      _prefs?.setString(_kPaymentCardProvider, provider);
+
+  static bool get paymentCardEnabled =>
+      _prefs?.getBool(_kPaymentCardEnabled) ?? true;
+
+  static Future<void> setPaymentCardEnabled(bool value) async =>
+      _prefs?.setBool(_kPaymentCardEnabled, value);
+
+  static bool get paymentCashEnabled =>
+      _prefs?.getBool(_kPaymentCashEnabled) ?? true;
+
+  static Future<void> setPaymentCashEnabled(bool value) async =>
+      _prefs?.setBool(_kPaymentCashEnabled, value);
+
+  /// When true, card/cash succeed without real hardware (demo / lab).
+  /// Defaults ON if Simulate Dispense is on, otherwise follows stored flag
+  /// (default true until a real reader provider is selected).
+  static bool get simulatePayment {
+    final stored = _prefs?.getBool(_kSimulatePayment);
+    if (stored != null) return stored;
+    if (simulateDispense || demoMode) return true;
+    return paymentCardProvider == 'simulate';
+  }
+
+  static Future<void> setSimulatePayment(bool value) async =>
+      _prefs?.setBool(_kSimulatePayment, value);
+
+  /// Show $1/$5/$10 buttons on the cash payment screen (lab / training).
+  static bool get cashSimulateButtons =>
+      _prefs?.getBool(_kCashSimulateButtons) ?? simulatePayment;
+
+  static Future<void> setCashSimulateButtons(bool value) async =>
+      _prefs?.setBool(_kCashSimulateButtons, value);
+
+  static bool get shouldSimulatePayment =>
+      simulatePayment || paymentCardProvider == 'simulate';
+
+  static String get effectiveCardProvider =>
+      shouldSimulatePayment ? 'simulate' : paymentCardProvider;
+
+  static String get paymentCardProviderLabel {
+    switch (paymentCardProvider) {
+      case 'nayax':
+        return 'Nayax';
+      case 'contaloupe':
+        return 'Contaloupe';
+      default:
+        return 'Simulate (no hardware)';
+    }
+  }
 
   /// Max seconds to wait for the customer to close the cooler door.
   static int get bketDoorTimeoutSec =>

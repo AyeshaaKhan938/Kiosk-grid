@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../services/cart_service.dart';
 import '../theme/vmfs_brand_colors.dart';
+import 'accessibility_options_panel.dart';
 import 'kiosk_interactive.dart';
 import 'tap_scale.dart';
 
@@ -11,7 +11,7 @@ class KioskAppHeader extends StatelessWidget {
   final VoidCallback? onBack;
   final VoidCallback? onLogoTap;
   final VoidCallback? onRefresh;
-  final VoidCallback? onCart;
+  final bool showAccessibility;
 
   const KioskAppHeader({
     super.key,
@@ -20,7 +20,7 @@ class KioskAppHeader extends StatelessWidget {
     this.onBack,
     this.onLogoTap,
     this.onRefresh,
-    this.onCart,
+    this.showAccessibility = true,
   });
 
   static double sidePad(BuildContext context) {
@@ -41,11 +41,7 @@ class KioskAppHeader extends StatelessWidget {
 
     return Container(
       decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF0A1628), Color(0xFF123456)],
-        ),
+        gradient: VmfsBrandColors.headerGradient,
       ),
       child: SafeArea(
         bottom: false,
@@ -112,6 +108,20 @@ class KioskAppHeader extends StatelessWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (showAccessibility)
+                    KioskIconButton(
+                      tooltip: 'Accessibility',
+                      onPressed: () => showAccessibilityOptionsSheet(context),
+                      padding: EdgeInsets.zero,
+                      constraints: iconConstraints,
+                      icon: Text(
+                        '♿',
+                        style: TextStyle(
+                          fontSize: compact ? 18 : 20,
+                          color: Colors.white.withValues(alpha: 0.95),
+                        ),
+                      ),
+                    ),
                   if (onRefresh != null)
                     KioskIconButton(
                       tooltip: 'Refresh',
@@ -122,95 +132,12 @@ class KioskAppHeader extends StatelessWidget {
                           color: Colors.white.withValues(alpha: 0.85),
                           size: compact ? 20 : 22),
                     ),
-                  if (onCart != null) _CartHeaderButton(onTap: onCart!),
                 ],
               ),
             ],
           ),
         ),
       ),
-    );
-  }
-}
-
-class _CartHeaderButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _CartHeaderButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: CartService.instance,
-      builder: (context, _) {
-        final count = CartService.instance.itemCount;
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            KioskIconButton(
-              tooltip: 'Cart',
-              onPressed: onTap,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-              icon: Icon(Icons.shopping_cart_outlined,
-                  color: Colors.white.withValues(alpha: 0.9), size: 24),
-            ),
-            if (count > 0)
-              Positioned(
-                right: 4,
-                top: 4,
-                child: IgnorePointer(
-                  child: Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: BoxDecoration(
-                      color: VmfsBrandColors.cloudPrimary,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 1.5),
-                    ),
-                    child: Text(
-                      count > 9 ? '9+' : '$count',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-/// Bottom-left cart shortcut for narrow / mobile layouts.
-class MobileCartFab extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const MobileCartFab({super.key, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    if (!KioskAppHeader.isCompact(context)) return const SizedBox.shrink();
-
-    return ListenableBuilder(
-      listenable: CartService.instance,
-      builder: (context, _) {
-        final count = CartService.instance.itemCount;
-        return Padding(
-          padding: const EdgeInsets.only(left: 8, bottom: 8),
-          child: KioskFloatingActionButton.extended(
-            heroTag: 'mobile_cart_fab',
-            backgroundColor: VmfsBrandColors.cloudPrimary,
-            foregroundColor: Colors.white,
-            onPressed: onTap,
-            icon: const Icon(Icons.shopping_cart_outlined),
-            label: Text(count > 0 ? 'Cart ($count)' : 'Cart'),
-          ),
-        );
-      },
     );
   }
 }

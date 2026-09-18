@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../models/demo_guide_step.dart';
 import '../../services/app_config.dart';
 import '../../services/demo_navigation.dart';
+import '../../theme/admin_theme.dart';
+import '../../widgets/admin/admin_page_scaffold.dart';
 import 'demo_mode_screen.dart';
 
 class DemoGuideScreen extends StatefulWidget {
@@ -22,7 +24,7 @@ class _DemoGuideScreenState extends State<DemoGuideScreen> {
   @override
   void initState() {
     super.initState();
-    final coil = AppConfig.isTcnVend || AppConfig.isReyeahUartVend;
+    final coil = AppConfig.isCoilMachine;
     _steps = DemoGuideStep.allSteps(isCoilMachine: coil);
     _index = widget.initialStepIndex.clamp(0, _steps.length - 1);
     _pageCtrl = PageController(initialPage: _index);
@@ -54,41 +56,59 @@ class _DemoGuideScreenState extends State<DemoGuideScreen> {
     final step = _steps[_index];
 
     return Scaffold(
-      backgroundColor: const Color(0xFF060E18),
+      backgroundColor: AdminColors.canvas,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0A1628),
-        foregroundColor: Colors.white,
-        title: const Text('Guided machine setup'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Guided setup'),
+            Text(
+              'Step ${_index + 1} of ${_steps.length}',
+              style: const TextStyle(
+                color: AdminColors.textMuted,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const DemoModeScreen()),
+              MaterialPageRoute(
+                builder: (_) => AdminTheme.withLightTheme(
+                  child: const DemoModeScreen(),
+                ),
+              ),
             ),
             child: const Text('Video'),
           ),
           TextButton(
             onPressed: _exitDemo,
-            child: const Text('Exit demo'),
+            child: const Text('Exit'),
           ),
         ],
       ),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
             child: Row(
               children: List.generate(_steps.length, (i) {
+                final done = i < _index;
                 final active = i == _index;
                 return Expanded(
                   child: Container(
-                    margin: EdgeInsets.only(right: i == _steps.length - 1 ? 0 : 6),
-                    height: 4,
+                    margin: EdgeInsets.only(
+                      right: i == _steps.length - 1 ? 0 : 5,
+                    ),
+                    height: 5,
                     decoration: BoxDecoration(
-                      color: active
-                          ? const Color(0xFF007ACC)
-                          : Colors.white12,
-                      borderRadius: BorderRadius.circular(2),
+                      color: active || done
+                          ? AdminColors.accent
+                          : AdminColors.border,
+                      borderRadius: BorderRadius.circular(3),
                     ),
                   ),
                 );
@@ -103,47 +123,35 @@ class _DemoGuideScreenState extends State<DemoGuideScreen> {
               itemBuilder: (_, i) => _StepPage(step: _steps[i]),
             ),
           ),
-          SafeArea(
-            top: false,
+          AdminBottomChrome(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
               child: Row(
                 children: [
                   OutlinedButton(
                     onPressed: _index > 0 ? () => _go(-1) : null,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white70,
-                      side: const BorderSide(color: Colors.white24),
-                    ),
                     child: const Text('Back'),
                   ),
-                  const SizedBox(width: 12),
-                  if (step.destination != DemoGuideDestination.none)
+                  const SizedBox(width: 10),
+                  if (step.destination != DemoGuideDestination.none) ...[
                     Expanded(
-                      child: ElevatedButton.icon(
+                      child: OutlinedButton.icon(
                         onPressed: () => openDemoGuideDestination(
                           context,
                           step.destination,
                         ),
                         icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                        label: const Text('Try in app'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF7C3AED),
-                          foregroundColor: Colors.white,
-                        ),
+                        label: const Text('Try'),
                       ),
                     ),
-                  if (step.destination != DemoGuideDestination.none)
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
+                  ],
                   Expanded(
-                    child: ElevatedButton(
+                    flex: step.destination != DemoGuideDestination.none ? 1 : 2,
+                    child: FilledButton(
                       onPressed: _index < _steps.length - 1
                           ? () => _go(1)
                           : () => Navigator.pop(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF007ACC),
-                        foregroundColor: Colors.white,
-                      ),
                       child: Text(
                         _index < _steps.length - 1 ? 'Next' : 'Done',
                       ),
@@ -167,78 +175,118 @@ class _StepPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: const Color(0xFF007ACC).withValues(alpha: 0.2),
-                child: Icon(step.icon, color: const Color(0xFF007ACC), size: 28),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Text(
-                  step.title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      child: AdminSurfaceCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: AdminColors.accent.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
                   ),
+                  child: Icon(
+                    step.icon,
+                    color: AdminColors.accent,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    step.title,
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text(
+              step.summary,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: AdminColors.textSecondary,
+                  ),
+            ),
+            if (step.coilOnlyNote) ...[
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF8E1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AdminColors.warning.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.info_outline_rounded,
+                      color: AdminColors.warning,
+                      size: 20,
+                    ),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Coil machines only — skip lift platform calibration '
+                        'on spiral coil units.',
+                        style: TextStyle(
+                          color: Color(0xFF7A4E00),
+                          fontSize: 13,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            step.summary,
-            style: const TextStyle(color: Colors.white70, fontSize: 16, height: 1.45),
-          ),
-          if (step.coilOnlyNote) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF422006),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
-              ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.warning_amber_rounded, color: Color(0xFFF59E0B), size: 20),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Coil machines only — skip lift platform calibration on spiral coil units.',
-                      style: TextStyle(color: Color(0xFFFDE68A), fontSize: 13),
+            const SizedBox(height: 20),
+            const AdminSectionLabel('Checklist'),
+            const SizedBox(height: 4),
+            ...step.bullets.map(
+              (b) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.only(top: 2),
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: AdminColors.accent.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.check_rounded,
+                        size: 14,
+                        color: AdminColors.accent,
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        b,
+                        style: const TextStyle(
+                          color: AdminColors.textPrimary,
+                          fontSize: 14,
+                          height: 1.45,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
-          const SizedBox(height: 24),
-          ...step.bullets.map(
-            (b) => Padding(
-              padding: const EdgeInsets.only(bottom: 14),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('•  ', style: TextStyle(color: Color(0xFF007ACC), fontSize: 18)),
-                  Expanded(
-                    child: Text(
-                      b,
-                      style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.45),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

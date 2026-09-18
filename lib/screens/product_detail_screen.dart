@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/machine_slot.dart';
 import '../services/cart_service.dart';
-import '../services/purchase_service.dart';
 import '../utils/kiosk_page_transitions.dart';
 import '../widgets/kiosk_app_header.dart';
 import '../widgets/kiosk_interactive.dart';
 import 'cart_screen.dart';
-import 'purchase_result_screen.dart';
+import 'payment_screen.dart';
+import '../services/purchase_service.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final MachineSlot slot;
@@ -93,39 +93,24 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-      _errorMsg = '';
-    });
-
-    try {
-      final result = await PurchaseService.checkoutItem(
-        slot,
-        ageVerificationSessionId: widget.ageVerificationSessionId,
-      );
-      if (!mounted) return;
-
-      Navigator.pushReplacement(
-        context,
-        kioskSlideRoute(
-          builder: (_) => PurchaseResultScreen(purchases: [result]),
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      kioskSlideRoute(
+        builder: (_) => PaymentScreen(
+          amount: slot.price,
+          summary: slot.productName,
+          completePurchase: (receipt) async {
+            final result = await PurchaseService.checkoutItem(
+              slot,
+              ageVerificationSessionId: widget.ageVerificationSessionId,
+              payment: receipt,
+            );
+            return [result];
+          },
         ),
-      );
-    } on PurchaseException catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _errorMsg = e.message;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _errorMsg = 'Purchase failed. Check your connection.';
-        });
-      }
-    }
+      ),
+    );
   }
 
   void _openCart() {
@@ -163,8 +148,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
 
     return Scaffold(
       backgroundColor: bg,
-      floatingActionButton: MobileCartFab(onTap: _openCart),
-      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
       body: FadeTransition(
         opacity: _fadeAnim,
         child: Column(
@@ -174,7 +157,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen>
               title: slot.productName,
               subtitle: slot.productCategory ?? slot.priceFormatted,
               onBack: () => Navigator.pop(context),
-              onCart: _openCart,
             ),
             Expanded(
               child: SingleChildScrollView(

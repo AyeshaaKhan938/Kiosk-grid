@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:usb_serial/usb_serial.dart';
 import '../services/app_config.dart';
-import '../services/kiosk_cloud_service.dart';
 import '../services/kiosk_lockdown.dart';
 import '../services/reyeah_service.dart';
 import '../services/afen_vmc_service.dart';
@@ -18,7 +17,11 @@ import 'setup_wizard_screen.dart';
 import 'admin/vmc_floor_height_screen.dart';
 import 'admin/vmc_log_screen.dart';
 import 'admin/admin_logs_screen.dart';
+import 'admin/admin_sensor_logs_screen.dart';
 import 'admin/admin_shell_screen.dart';
+import '../models/machine_mechanism.dart';
+import '../theme/admin_theme.dart';
+import '../widgets/admin/admin_page_scaffold.dart';
 
 /// Panel de administración oculto — accesible vía gesto secreto + PIN.
 ///
@@ -41,32 +44,27 @@ class AdminConfigScreen extends StatefulWidget {
 class _AdminConfigScreenState extends State<AdminConfigScreen> {
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF060E18),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0A1628),
-        foregroundColor: Colors.white,
-        title: const Row(
-          children: [
-            Icon(Icons.settings_outlined, color: Color(0xFF007ACC), size: 20),
-            SizedBox(width: 10),
-            Text(
-              'Admin Settings',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+    return AdminTheme.withLightTheme(
+      child: Scaffold(
+        backgroundColor: AdminColors.canvas,
+        appBar: AppBar(
+          title: const Row(
+            children: [
+              Icon(Icons.settings_outlined, color: AdminColors.accent, size: 22),
+              SizedBox(width: 10),
+              Text('Admin settings'),
+            ],
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.close_rounded, size: 20),
+              label: const Text('Close'),
             ),
           ],
         ),
-        actions: [
-          TextButton.icon(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.close, color: Colors.white38, size: 18),
-            label: const Text('Close',
-                style: TextStyle(color: Colors.white38, fontSize: 13)),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(24),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
         children: [
           // ── Admin Panel entry ──────────────────────────────────────────
           _buildAction(
@@ -153,7 +151,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           const SizedBox(height: 4),
           const Text(
             'Required to unlock the Admin Panel (dashboard, inventory, orders).',
-            style: TextStyle(color: Colors.white38, fontSize: 11),
+            style: TextStyle(color: AdminColors.textMuted, fontSize: 11),
           ),
           const SizedBox(height: 10),
           _ManagementTokenPanel(onSaved: () => setState(() {})),
@@ -166,7 +164,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           const Text(
             'Link this tablet to vms-cloud on the Backend step — same screen '
             'as API Test Connection (activation code after test succeeds).',
-            style: TextStyle(color: Colors.white38, fontSize: 11),
+            style: TextStyle(color: AdminColors.textMuted, fontSize: 11),
           ),
           const SizedBox(height: 10),
           _buildAction(
@@ -197,7 +195,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             const SizedBox(height: 4),
             const Text(
               'Lottery draw is enabled for this machine.',
-              style: TextStyle(color: Colors.white38, fontSize: 11),
+              style: TextStyle(color: AdminColors.textMuted, fontSize: 11),
             ),
             const SizedBox(height: 10),
             _LotteryTokenPanel(onSaved: () => setState(() {})),
@@ -206,6 +204,10 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
 
           // ── Toggle: Simulate Dispense ──────────────────────────────────
           _buildSimulateToggle(),
+          const SizedBox(height: 12),
+
+          // ── Payment (card reader + cash) ───────────────────────────────
+          _buildPaymentSettings(),
           const SizedBox(height: 12),
 
           // ── Toggle: Age verification ─────────────────────────────────
@@ -235,7 +237,27 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             color: const Color(0xFF42A5F5),
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const AdminLogsScreen()),
+              MaterialPageRoute(
+                builder: (_) =>
+                    AdminTheme.withLightTheme(child: const AdminLogsScreen()),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildAction(
+            icon: Icons.thermostat_rounded,
+            label: 'Sensor logs',
+            subtitle:
+                'Temperature, cooling, heating, motors, belts, elevator, '
+                'conveyor, coils, and payment device status. Auto-uploads to cloud.',
+            color: const Color(0xFF00897B),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => AdminTheme.withLightTheme(
+                  child: const AdminSensorLogsScreen(),
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 12),
@@ -282,35 +304,26 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           const SizedBox(height: 32),
           const Center(
             child: Text(
-              'VMFS USA © 2026 — Admin Panel',
-              style: TextStyle(color: Colors.white12, fontSize: 11),
+              'VMFS USA © 2026 — Admin',
+              style: TextStyle(color: AdminColors.textMuted, fontSize: 11),
             ),
           ),
         ],
+        ),
       ),
     );
   }
 
   // ── Section label ─────────────────────────────────────────────────────────
 
-  Widget _buildSectionLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        color: Color(0xFF007ACC),
-        fontSize: 11,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 2,
-      ),
-    );
-  }
+  Widget _buildSectionLabel(String text) => AdminSectionLabel(text);
 
   // ── Cloud backend (machine management) ───────────────────────────────────
 
   Widget _buildCloudBackendSection() {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1A2B),
+        color: AdminColors.card,
         borderRadius: BorderRadius.circular(14),
         border:
             Border.all(color: const Color(0xFF007ACC).withValues(alpha: 0.2)),
@@ -332,7 +345,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
   Widget _buildHardwareProtocolSelector() {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1A2B),
+        color: AdminColors.card,
         borderRadius: BorderRadius.circular(14),
         border:
             Border.all(color: const Color(0xFF007ACC).withValues(alpha: 0.2)),
@@ -346,10 +359,25 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
               await AppConfig.setHardwareProtocol(value);
               setState(() {});
             },
-            label: 'Reyeah elevator (UART)',
-            subtitle: 'Reyeah control board — serial motor + lift/elevator recovery',
-            icon: Icons.settings_input_hdmi_outlined,
+            label: 'Elevator (Reyeah UART)',
+            subtitle:
+                'Multi-floor lift / platform — motor frames + VMC lift tools',
+            icon: Icons.elevator_outlined,
             color: const Color(0xFF00BCD4),
+          ),
+          Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
+          _buildModeOption(
+            value: 'conveyor',
+            selected: AppConfig.hardwareProtocol == 'conveyor',
+            onSelect: (value) async {
+              await AppConfig.setHardwareProtocol(value);
+              setState(() {});
+            },
+            label: 'Conveyor belt (UART)',
+            subtitle:
+                'Belt / pusher lanes over serial — no lift calibration tools',
+            icon: Icons.view_week_rounded,
+            color: const Color(0xFF42A5F5),
           ),
           Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
           _buildModeOption(
@@ -359,8 +387,8 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
               await AppConfig.setHardwareProtocol(value);
               setState(() {});
             },
-            label: 'TCN serial board',
-            subtitle: 'TCN Android coil commands — rotates slot motor to vend',
+            label: 'Coil / spiral (TCN)',
+            subtitle: 'TCN coil motor commands — rotates spiral to vend',
             icon: Icons.settings_input_component_outlined,
             color: const Color(0xFF9575CD),
           ),
@@ -372,8 +400,9 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
               await AppConfig.setHardwareProtocol(value);
               setState(() {});
             },
-            label: 'AFEN VMC',
-            subtitle: 'FunCode motor authorize + UART — products from vms-cloud',
+            label: 'Elevator (AFEN VMC)',
+            subtitle:
+                'FunCode authorize + UART motor — lift tools for elevator cabinets',
             icon: Icons.hub_outlined,
             color: const Color(0xFFFF9800),
           ),
@@ -396,159 +425,196 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     );
   }
 
-  /// Vend-specific admin tools — only the actions relevant to the selected
-  /// dispense hardware (Reyeah UART, TCN, or AFEN).
+  /// Vend-specific admin tools — filtered by [AppConfig.machineMechanism]
+  /// so elevator lift tools never appear on coil / conveyor cabinets.
   List<Widget> _buildHardwareVendActions() {
-    final protocol = AppConfig.hardwareProtocol;
-    final testSubtitle = switch (protocol) {
-      'tcn' =>
-        'Fire a TCN coil command for the slot. No order created in vms-cloud.',
-      'afen' =>
-        'Authorize on AFEN VMC, fire UART motor, send delivery feedback. No order.',
-      'bket' =>
-        'Record cameras, unlock door, wait for customer to close the door.',
-      _ =>
-        'Fire the Reyeah UART motor for the slot. No order created in vms-cloud.',
-    };
-
+    final mechanism = AppConfig.machineMechanism;
     final widgets = <Widget>[
-      _buildSectionLabel(
-        switch (protocol) {
-          'tcn' => 'TCN VEND',
-          'afen' => 'AFEN VEND',
-          'bket' => 'AI COOLER',
-          _ => 'REYEAH / UART VEND',
-        },
+      _buildSectionLabel('${mechanism.shortLabel.toUpperCase()} TEST TOOLS'),
+      const SizedBox(height: 4),
+      Text(
+        'Detected: ${mechanism.label} · ${AppConfig.hardwareProtocolLabel}',
+        style: const TextStyle(color: AdminColors.textMuted, fontSize: 11),
       ),
       const SizedBox(height: 10),
-      if (protocol == 'bket') ...[
-        _buildAction(
-          icon: Icons.lock_open_rounded,
-          label: 'Test Unlock Door',
-          subtitle: 'Pulse electromagnetic lock 1 on the cooler cabinet.',
-          color: const Color(0xFF26A69A),
-          onTap: _testBketUnlock,
-        ),
-        const SizedBox(height: 12),
-        _buildAction(
-          icon: Icons.videocam_rounded,
-          label: 'Test Cooler Session',
-          subtitle: testSubtitle,
-          color: const Color(0xFF4CAF50),
-          onTap: _testBketSession,
-        ),
-        const SizedBox(height: 12),
-        _buildAction(
-          icon: Icons.info_outline_rounded,
-          label: 'Cooler Hardware Status',
-          subtitle: 'Door, lock, and camera state from the BKX SDK.',
-          color: const Color(0xFF00BCD4),
-          onTap: _showBketStatus,
-        ),
-      ] else ...[
-        _buildAction(
-          icon: Icons.local_shipping_rounded,
-          label: 'Test Dispense Slot',
-          subtitle: testSubtitle,
-          color: const Color(0xFF4CAF50),
-          onTap: _promptTestDispense,
-        ),
-        const SizedBox(height: 12),
-        _buildAction(
-          icon: Icons.cable_rounded,
-          label: 'TTY Serial Port',
-          subtitle:
-              'Currently: ${AppConfig.ttyPath}. Pick the /dev/ttyS* port wired to the ${AppConfig.hardwareProtocolLabel} board.',
-          color: const Color(0xFFFF6F00),
-          onTap: _pickTtyDevice,
-        ),
-      ],
     ];
 
-    if (AppConfig.isReyeahUartVend) {
-      widgets.addAll([
-        const SizedBox(height: 12),
-        _buildAction(
-          icon: Icons.usb_rounded,
-          label: 'Test USB Serial',
-          subtitle: 'Send Device ID request to the Reyeah control board',
-          color: const Color(0xFF00BCD4),
-          onTap: _testUsb,
-        ),
-        const SizedBox(height: 12),
-        _buildAction(
-          icon: Icons.home_repair_service_rounded,
-          label: 'Reset VMC / Home Lift',
-          subtitle: 'Sends CMD 0xA1 to fully reset the Reyeah control '
-              'board. On elevator machines this also drives the lift '
-              'platform back to its home (bottom) position.',
-          color: const Color(0xFFEF5350),
-          onTap: _resetVmc,
-        ),
-        const SizedBox(height: 12),
-        _buildAction(
-          icon: Icons.restart_alt_rounded,
-          label: 'Clear Board Faults',
-          subtitle: 'Sends 0xA2 to reset latched motor / sensor faults '
-              'on the Reyeah control board.',
-          color: const Color(0xFFFF7043),
-          onTap: _clearBoardFaults,
-        ),
-        const SizedBox(height: 12),
-        _buildAction(
-          icon: Icons.vertical_align_top_rounded,
-          label: 'Calibrate Lift Platform',
-          subtitle: 'Elevator machines only. Sends CMD 0x21 to teach '
-              'the VMC each floor\'s height (~45 s).',
-          color: const Color(0xFF8E24AA),
-          onTap: _calibrateLift,
-        ),
-        const SizedBox(height: 12),
-        _buildAction(
-          icon: Icons.height_rounded,
-          label: 'Lift Floor Heights',
-          subtitle: 'Read CMD 0x20 floor heights and set values with CMD 0x21 '
-              'via ${AppConfig.ttyPath}.',
-          color: const Color(0xFF8E24AA),
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const VmcFloorHeightScreen()),
+    switch (mechanism) {
+      case MachineMechanism.cooler:
+        widgets.addAll([
+          _buildAction(
+            icon: Icons.lock_open_rounded,
+            label: 'Test Unlock Door',
+            subtitle: 'Pulse electromagnetic lock 1 on the cooler cabinet.',
+            color: const Color(0xFF26A69A),
+            onTap: _testBketUnlock,
           ),
-        ),
-        const SizedBox(height: 12),
-        _buildAction(
-          icon: Icons.receipt_long_rounded,
-          label: 'VMC Log',
-          subtitle: 'Request board logs with CMD 0x03 from ${AppConfig.ttyPath}.',
-          color: const Color(0xFF00BCD4),
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const VmcLogScreen()),
+          const SizedBox(height: 12),
+          _buildAction(
+            icon: Icons.videocam_rounded,
+            label: 'Test Cooler Session',
+            subtitle:
+                'Record cameras, unlock door, wait for customer to close the door.',
+            color: const Color(0xFF4CAF50),
+            onTap: _testBketSession,
           ),
-        ),
-        const SizedBox(height: 12),
-        _buildAction(
-          icon: Icons.precision_manufacturing_rounded,
-          label: 'Delivery Axis',
-          subtitle: 'Fixed: side-push 0xFB. Every dispense sends '
-              'FF 00 55 41 02 <slot> FB <checksum>.',
-          color: const Color(0xFF9575CD),
-          onTap: _showDeliveryAxisInfo,
-        ),
-      ]);
-    }
-
-    if (AppConfig.isTcnVend) {
-      widgets.addAll([
-        const SizedBox(height: 12),
-        _buildAction(
-          icon: Icons.elevator_rounded,
-          label: 'Clear TCN Elevator Fault',
-          subtitle: 'Send the configured TCN clear-fault command over serial.',
-          color: const Color(0xFF9575CD),
-          onTap: _clearTcnFault,
-        ),
-      ]);
+          const SizedBox(height: 12),
+          _buildAction(
+            icon: Icons.info_outline_rounded,
+            label: 'Cooler Hardware Status',
+            subtitle: 'Door, lock, and camera state from the BKX SDK.',
+            color: const Color(0xFF00BCD4),
+            onTap: _showBketStatus,
+          ),
+        ]);
+        break;
+      case MachineMechanism.coil:
+        widgets.addAll([
+          _buildAction(
+            icon: Icons.local_shipping_rounded,
+            label: 'Test Coil Dispense',
+            subtitle:
+                'Fire a TCN coil command for the slot. No order created in vms-cloud.',
+            color: const Color(0xFF4CAF50),
+            onTap: _promptTestDispense,
+          ),
+          const SizedBox(height: 12),
+          _buildAction(
+            icon: Icons.cable_rounded,
+            label: 'TTY Serial Port',
+            subtitle:
+                'Currently: ${AppConfig.ttyPath}. Port wired to the TCN coil board.',
+            color: const Color(0xFFFF6F00),
+            onTap: _pickTtyDevice,
+          ),
+        ]);
+        break;
+      case MachineMechanism.conveyor:
+        widgets.addAll([
+          _buildAction(
+            icon: Icons.local_shipping_rounded,
+            label: 'Test Conveyor Lane',
+            subtitle:
+                'Fire the UART motor for a belt / pusher lane. No cloud order.',
+            color: const Color(0xFF4CAF50),
+            onTap: _promptTestDispense,
+          ),
+          const SizedBox(height: 12),
+          _buildAction(
+            icon: Icons.cable_rounded,
+            label: 'TTY Serial Port',
+            subtitle:
+                'Currently: ${AppConfig.ttyPath}. Port for the conveyor control board.',
+            color: const Color(0xFFFF6F00),
+            onTap: _pickTtyDevice,
+          ),
+          const SizedBox(height: 12),
+          _buildAction(
+            icon: Icons.usb_rounded,
+            label: 'Test USB Serial',
+            subtitle: 'Send Device ID request to the control board',
+            color: const Color(0xFF00BCD4),
+            onTap: _testUsb,
+          ),
+        ]);
+        break;
+      case MachineMechanism.elevator:
+        widgets.addAll([
+          _buildAction(
+            icon: Icons.local_shipping_rounded,
+            label: 'Test Dispense Slot',
+            subtitle: AppConfig.isAfenVend
+                ? 'Authorize on AFEN VMC, fire UART motor, send delivery feedback.'
+                : 'Fire the Reyeah UART motor for the slot. No cloud order.',
+            color: const Color(0xFF4CAF50),
+            onTap: _promptTestDispense,
+          ),
+          const SizedBox(height: 12),
+          _buildAction(
+            icon: Icons.cable_rounded,
+            label: 'TTY Serial Port',
+            subtitle:
+                'Currently: ${AppConfig.ttyPath}. Port wired to the elevator VMC.',
+            color: const Color(0xFFFF6F00),
+            onTap: _pickTtyDevice,
+          ),
+          const SizedBox(height: 12),
+          _buildAction(
+            icon: Icons.usb_rounded,
+            label: 'Test USB Serial',
+            subtitle: 'Send Device ID request to the Reyeah control board',
+            color: const Color(0xFF00BCD4),
+            onTap: _testUsb,
+          ),
+          const SizedBox(height: 12),
+          _buildAction(
+            icon: Icons.home_repair_service_rounded,
+            label: 'Reset VMC / Home Lift',
+            subtitle:
+                'CMD 0xA1 — reset the board and drive the lift platform home.',
+            color: const Color(0xFFEF5350),
+            onTap: _resetVmc,
+          ),
+          const SizedBox(height: 12),
+          _buildAction(
+            icon: Icons.restart_alt_rounded,
+            label: 'Clear Board Faults',
+            subtitle:
+                'CMD 0xA2 — reset latched motor / sensor faults on the VMC.',
+            color: const Color(0xFFFF7043),
+            onTap: _clearBoardFaults,
+          ),
+          const SizedBox(height: 12),
+          _buildAction(
+            icon: Icons.vertical_align_top_rounded,
+            label: 'Calibrate Lift Platform',
+            subtitle:
+                'CMD 0x21 — teach the VMC each floor height (~45 s). Elevator only.',
+            color: const Color(0xFF8E24AA),
+            onTap: _calibrateLift,
+          ),
+          const SizedBox(height: 12),
+          _buildAction(
+            icon: Icons.height_rounded,
+            label: 'Lift Floor Heights',
+            subtitle:
+                'Read CMD 0x20 heights and set values via ${AppConfig.ttyPath}.',
+            color: const Color(0xFF8E24AA),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => AdminTheme.withLightTheme(
+                  child: const VmcFloorHeightScreen(),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildAction(
+            icon: Icons.receipt_long_rounded,
+            label: 'VMC Log',
+            subtitle:
+                'Request board logs with CMD 0x03 from ${AppConfig.ttyPath}.',
+            color: const Color(0xFF00BCD4),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    AdminTheme.withLightTheme(child: const VmcLogScreen()),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildAction(
+            icon: Icons.precision_manufacturing_rounded,
+            label: 'Delivery Axis',
+            subtitle:
+                'Fixed: side-push 0xFB. Every dispense sends FF 00 55 41 02 <slot> FB.',
+            color: const Color(0xFF9575CD),
+            onTap: _showDeliveryAxisInfo,
+          ),
+        ]);
+        break;
     }
 
     widgets.add(const SizedBox(height: 20));
@@ -560,7 +626,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
+        backgroundColor: AdminColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Clear TCN Fault',
             style: TextStyle(color: Colors.white, fontSize: 17)),
@@ -574,7 +640,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                       color: Color(0xFF9575CD), strokeWidth: 2),
                   SizedBox(width: 16),
                   Text('Sending clear-fault command…',
-                      style: TextStyle(color: Colors.white54)),
+                      style: TextStyle(color: AdminColors.textSecondary)),
                 ],
               );
             }
@@ -623,7 +689,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(icon,
-                  color: selected ? color : Colors.white38, size: 20),
+                  color: selected ? color : AdminColors.textMuted, size: 20),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -639,7 +705,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                   const SizedBox(height: 2),
                   Text(subtitle,
                       style:
-                          const TextStyle(color: Colors.white38, fontSize: 11)),
+                          const TextStyle(color: AdminColors.textMuted, fontSize: 11)),
                 ],
               ),
             ),
@@ -651,7 +717,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                 shape: BoxShape.circle,
                 color: selected ? color : Colors.transparent,
                 border: Border.all(
-                  color: selected ? color : Colors.white24,
+                  color: selected ? color : AdminColors.textMuted,
                   width: 2,
                 ),
               ),
@@ -671,7 +737,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1A2B),
+        color: AdminColors.card,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: const Color(0xFFFF9800).withValues(alpha: 0.3),
@@ -704,7 +770,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                   AppConfig.simulateDispense
                       ? 'ON — USB serial bypassed (testing mode)'
                       : 'OFF — Real USB serial (production)',
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  style: const TextStyle(color: AdminColors.textMuted, fontSize: 12),
                 ),
               ],
             ),
@@ -723,13 +789,127 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     );
   }
 
+  // ── Payment terminal settings ─────────────────────────────────────────────
+
+  Widget _buildPaymentSettings() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: AdminColors.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFF2E7D32).withValues(alpha: 0.35),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2E7D32).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.point_of_sale_rounded,
+                    color: Color(0xFF2E7D32), size: 22),
+              ),
+              const SizedBox(width: 16),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Customer payment',
+                        style: TextStyle(
+                            color: Color(0xFF2E7D32),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15)),
+                    SizedBox(height: 3),
+                    Text(
+                      'Card (Nayax / Contaloupe) or bill & coin before vend',
+                      style:
+                          TextStyle(color: AdminColors.textMuted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Card payments',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            value: AppConfig.paymentCardEnabled,
+            onChanged: (v) async {
+              await AppConfig.setPaymentCardEnabled(v);
+              setState(() {});
+            },
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Cash (bill & coin)',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            value: AppConfig.paymentCashEnabled,
+            onChanged: (v) async {
+              await AppConfig.setPaymentCashEnabled(v);
+              setState(() {});
+            },
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Simulate payment',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            subtitle: const Text(
+              'Demo / lab — approve without real hardware',
+              style: TextStyle(fontSize: 11, color: AdminColors.textMuted),
+            ),
+            value: AppConfig.simulatePayment,
+            onChanged: (v) async {
+              await AppConfig.setSimulatePayment(v);
+              setState(() {});
+            },
+          ),
+          const SizedBox(height: 6),
+          const Text('Card reader',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AdminColors.textMuted)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final entry in const [
+                ('simulate', 'Simulate'),
+                ('nayax', 'Nayax'),
+                ('contaloupe', 'Contaloupe'),
+              ])
+                ChoiceChip(
+                  label: Text(entry.$2),
+                  selected: AppConfig.paymentCardProvider == entry.$1,
+                  onSelected: (_) async {
+                    await AppConfig.setPaymentCardProvider(entry.$1);
+                    setState(() {});
+                  },
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Age verification toggle ─────────────────────────────────────────────
 
   Widget _buildAgeVerificationToggle() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1A2B),
+        color: AdminColors.card,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: const Color(0xFF007ACC).withValues(alpha: 0.3),
@@ -762,7 +942,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                   AppConfig.ageVerificationEnabled
                       ? 'ON — QR ID scan required before code entry'
                       : 'OFF — Customers go straight to code entry',
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  style: const TextStyle(color: AdminColors.textMuted, fontSize: 12),
                 ),
               ],
             ),
@@ -787,7 +967,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1A2B),
+        color: AdminColors.card,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: const Color(0xFF388E3C).withValues(alpha: 0.3),
@@ -820,7 +1000,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                   AppConfig.autoUpdate
                       ? 'ON — new APKs download + install silently (no operator interaction)'
                       : 'OFF — manual updates only via "Check for Updates"',
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  style: const TextStyle(color: AdminColors.textMuted, fontSize: 12),
                 ),
               ],
             ),
@@ -845,7 +1025,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1A2B),
+        color: AdminColors.card,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: const Color(0xFF42A5F5).withValues(alpha: 0.3),
@@ -878,7 +1058,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                   AppConfig.autoUploadLogs
                       ? 'ON — log files ship to vms-cloud every 6 h (no operator action)'
                       : 'OFF — manual upload only via View Logs → "Send to vms-cloud"',
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  style: const TextStyle(color: AdminColors.textMuted, fontSize: 12),
                 ),
               ],
             ),
@@ -904,7 +1084,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
+        backgroundColor: AdminColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
@@ -924,7 +1104,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                       color: Color(0xFF00BCD4), strokeWidth: 2),
                   SizedBox(width: 16),
                   Text('Sending ping to VMC…',
-                      style: TextStyle(color: Colors.white54)),
+                      style: TextStyle(color: AdminColors.textSecondary)),
                 ],
               );
             }
@@ -985,7 +1165,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             Expanded(
               child: Text(
                 'Cooler session running…\nOpen the door, then close it.',
-                style: TextStyle(color: Colors.white70),
+                style: TextStyle(color: AdminColors.textSecondary),
               ),
             ),
           ],
@@ -1014,7 +1194,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
+        backgroundColor: AdminColors.card,
         title: const Text('AI Cooler Status',
             style: TextStyle(color: Colors.white)),
         content: Text(
@@ -1024,7 +1204,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           'Host camera online: ${status.hostCameraOnline}\n'
           'Sub camera online: ${status.subCameraOnline}\n'
           'Camera SDK: ${status.cameraSdkVersion ?? 'unknown'}',
-          style: const TextStyle(color: Colors.white70, height: 1.5),
+          style: const TextStyle(color: AdminColors.textSecondary, height: 1.5),
         ),
         actions: [
           TextButton(
@@ -1044,7 +1224,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     final slotNumber = await showDialog<int>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
+        backgroundColor: AdminColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
@@ -1062,7 +1242,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
               'Enter the slot number (1-99) you want to test. The motor for '
               'that slot will fire using ${AppConfig.hardwareProtocolLabel}.\n\n'
               'This does NOT create an order in vms-cloud.',
-              style: const TextStyle(color: Colors.white54, fontSize: 12),
+              style: const TextStyle(color: AdminColors.textSecondary, fontSize: 12),
             ),
             const SizedBox(height: 14),
             TextField(
@@ -1076,12 +1256,12 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                   color: Colors.white, fontSize: 22, letterSpacing: 4),
               decoration: InputDecoration(
                 hintText: 'Slot #',
-                hintStyle: const TextStyle(color: Colors.white24),
+                hintStyle: const TextStyle(color: AdminColors.textMuted),
                 filled: true,
-                fillColor: const Color(0xFF060E18),
+                fillColor: AdminColors.fieldFill,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Colors.white12),
+                  borderSide: const BorderSide(color: AdminColors.border),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -1104,7 +1284,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           TextButton(
             onPressed: () => Navigator.pop(context, null),
             child:
-                const Text('Cancel', style: TextStyle(color: Colors.white38)),
+                const Text('Cancel', style: TextStyle(color: AdminColors.textMuted)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -1151,7 +1331,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
+        backgroundColor: AdminColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(children: [
           Icon(Icons.vertical_align_top_rounded, color: Color(0xFF8E24AA)),
@@ -1178,7 +1358,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                     'Sending CMD 0x21 to the VMC… the lift platform '
                     'will run through every floor while it learns the '
                     'heights. Don\'t open the cabinet door. About 45 s.',
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                    style: TextStyle(color: AdminColors.textSecondary, fontSize: 13),
                   )),
                 ]),
               );
@@ -1229,7 +1409,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
+        backgroundColor: AdminColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(children: [
           Icon(Icons.home_repair_service_rounded, color: Color(0xFFEF5350)),
@@ -1251,7 +1431,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                   Expanded(child: Text(
                     'Sending CMD 0xA1 reset… the lift platform will '
                     'travel back to its home position. About 10 seconds.',
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                    style: TextStyle(color: AdminColors.textSecondary, fontSize: 13),
                   )),
                 ]),
               );
@@ -1300,7 +1480,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
+        backgroundColor: AdminColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(children: [
           Icon(Icons.restart_alt_rounded, color: Color(0xFFFF7043)),
@@ -1322,7 +1502,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                 Expanded(
                     child: Text(
                   'Sending 0xA2 clear-fault command…',
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                  style: TextStyle(color: AdminColors.textSecondary, fontSize: 13),
                 )),
               ]);
             }
@@ -1366,7 +1546,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
+        backgroundColor: AdminColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
@@ -1386,7 +1566,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                   CircularProgressIndicator(
                       color: Color(0xFF9C27B0), strokeWidth: 2),
                   SizedBox(width: 16),
-                  Text('Scanning…', style: TextStyle(color: Colors.white54)),
+                  Text('Scanning…', style: TextStyle(color: AdminColors.textSecondary)),
                 ]),
               );
             }
@@ -1428,7 +1608,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                         padding: const EdgeInsets.all(10),
                         margin: const EdgeInsets.only(bottom: 8),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF060E18),
+                          color: AdminColors.fieldFill,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
                               color: const Color(0xFF9C27B0)
@@ -1445,7 +1625,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                             'DeviceId: ${d.deviceId}',
                           ].join('\n'),
                           style: const TextStyle(
-                            color: Colors.white70,
+                            color: AdminColors.textSecondary,
                             fontSize: 11,
                             fontFamily: 'monospace',
                             height: 1.5,
@@ -1481,7 +1661,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
-          backgroundColor: const Color(0xFF0D1A2B),
+          backgroundColor: AdminColors.card,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Row(
@@ -1514,7 +1694,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     final picked = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
+        backgroundColor: AdminColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
@@ -1533,7 +1713,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
               const Text(
                 'Select the /dev/ttyS* port wired to the Reyeah Control Board. '
                 'After picking, use "Test Dispense Slot" to confirm the motor fires.',
-                style: TextStyle(color: Colors.white54, fontSize: 12),
+                style: TextStyle(color: AdminColors.textSecondary, fontSize: 12),
               ),
               const SizedBox(height: 14),
               for (final path in devices)
@@ -1546,7 +1726,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                         : Icons.radio_button_unchecked,
                     color: path == current
                         ? const Color(0xFFFF6F00)
-                        : Colors.white38,
+                        : AdminColors.textMuted,
                     size: 20,
                   ),
                   title: Text(
@@ -1570,7 +1750,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           TextButton(
             onPressed: () => Navigator.pop(context, null),
             child:
-                const Text('Cancel', style: TextStyle(color: Colors.white38)),
+                const Text('Cancel', style: TextStyle(color: AdminColors.textMuted)),
           ),
         ],
       ),
@@ -1597,7 +1777,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
+        backgroundColor: AdminColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(children: [
           Icon(Icons.precision_manufacturing_rounded, color: Color(0xFF9575CD)),
@@ -1611,13 +1791,13 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             'Delivery commands always use side-push 0xFB after the slot '
             'number. Before every delivery, the app first sends CMD 0xA2 '
             'to clear any latched board fault from a previous failed vend.',
-            style: TextStyle(color: Colors.white54, fontSize: 12),
+            style: TextStyle(color: AdminColors.textSecondary, fontSize: 12),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close', style: TextStyle(color: Colors.white38)),
+            child: const Text('Close', style: TextStyle(color: AdminColors.textMuted)),
           ),
         ],
       ),
@@ -1661,26 +1841,11 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
   String _hardwareProtocolLabel() => AppConfig.hardwareProtocolLabel;
 
   Widget _buildInfoCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0D1A2B),
-        borderRadius: BorderRadius.circular(16),
-        border:
-            Border.all(color: const Color(0xFF007ACC).withValues(alpha: 0.2)),
-      ),
+    return AdminSurfaceCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'CURRENT CONFIGURATION',
-            style: TextStyle(
-              color: Color(0xFF007ACC),
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 2,
-            ),
-          ),
+          const AdminSectionLabel('CURRENT CONFIGURATION'),
           const SizedBox(height: 16),
           _infoRow('Cloud Backend', _backendModeLabel()),
           _infoRow('Dispense Hardware', _hardwareProtocolLabel()),
@@ -1721,6 +1886,9 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             _infoRow('Board Type', AppConfig.tcnBoardType),
             _infoRow('TTY Port', AppConfig.ttyPath),
           ],
+          if (AppConfig.isConveyorVend || AppConfig.isReyeahUartVend)
+            _infoRow('TTY Port', AppConfig.ttyPath),
+          _infoRow('Mechanism', AppConfig.machineMechanism.label),
           _infoRow('Admin PIN', '••••'),
         ],
       ),
@@ -1736,14 +1904,16 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             width: 130,
             child: Text(
               label,
-              style: const TextStyle(color: Colors.white38, fontSize: 13),
+              style: const TextStyle(color: AdminColors.textMuted, fontSize: 13),
             ),
           ),
           Expanded(
             child: Text(
               value.isEmpty ? '— not set —' : value,
               style: TextStyle(
-                color: value.isEmpty ? Colors.white24 : Colors.white,
+                color: value.isEmpty
+                    ? AdminColors.textMuted
+                    : AdminColors.textPrimary,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
@@ -1763,47 +1933,12 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     required Color color,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
+    return AdminActionTile(
+      icon: icon,
+      label: label,
+      subtitle: subtitle,
+      accent: color,
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0D1A2B),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.25)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: color, size: 22),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label,
-                      style: TextStyle(
-                          color: color,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15)),
-                  const SizedBox(height: 3),
-                  Text(subtitle,
-                      style:
-                          const TextStyle(color: Colors.white38, fontSize: 12)),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right, color: color.withValues(alpha: 0.5)),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1851,7 +1986,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
+        backgroundColor: AdminColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(children: [
           Icon(Icons.system_update_rounded, color: Color(0xFF388E3C)),
@@ -1867,7 +2002,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
               Text(
                 'Current: $currentVersion\nLatest:  ${info.versionName}',
                 style: const TextStyle(
-                    color: Colors.white70,
+                    color: AdminColors.textSecondary,
                     fontSize: 13,
                     fontFamily: 'monospace'),
               ),
@@ -1875,7 +2010,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                 const SizedBox(height: 8),
                 Text(
                   'Download size: ${(info.sizeBytes! / 1024 / 1024).toStringAsFixed(1)} MB',
-                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  style: const TextStyle(color: AdminColors.textSecondary, fontSize: 12),
                 ),
               ],
               if (info.releaseNotes.isNotEmpty) ...[
@@ -1889,7 +2024,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                 const SizedBox(height: 6),
                 Text(info.releaseNotes,
                     style:
-                        const TextStyle(color: Colors.white70, fontSize: 12)),
+                        const TextStyle(color: AdminColors.textSecondary, fontSize: 12)),
               ],
               if (info.mandatory) ...[
                 const SizedBox(height: 16),
@@ -1918,7 +2053,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             TextButton(
               onPressed: () => Navigator.pop(context, false),
               child:
-                  const Text('Later', style: TextStyle(color: Colors.white38)),
+                  const Text('Later', style: TextStyle(color: AdminColors.textMuted)),
             ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
@@ -2017,11 +2152,11 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     return showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
+        backgroundColor: AdminColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(title, style: TextStyle(color: color, fontSize: 17)),
         content: Text(message,
-            style: const TextStyle(color: Colors.white70, fontSize: 13)),
+            style: const TextStyle(color: AdminColors.textSecondary, fontSize: 13)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -2040,7 +2175,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
+        backgroundColor: AdminColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
@@ -2054,13 +2189,13 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           'This unpins the screen so you can press Home/Recents, install '
           'updates, or access Android Settings. The app will re-lock the '
           'screen the next time it launches.',
-          style: TextStyle(color: Colors.white54),
+          style: TextStyle(color: AdminColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child:
-                const Text('Cancel', style: TextStyle(color: Colors.white38)),
+                const Text('Cancel', style: TextStyle(color: AdminColors.textMuted)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
@@ -2094,7 +2229,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
+        backgroundColor: AdminColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
@@ -2107,13 +2242,13 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         content: const Text(
           'This will erase all saved configuration. '
           'The app will show the Setup screen on next launch.',
-          style: TextStyle(color: Colors.white54),
+          style: TextStyle(color: AdminColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child:
-                const Text('Cancel', style: TextStyle(color: Colors.white38)),
+                const Text('Cancel', style: TextStyle(color: AdminColors.textMuted)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
@@ -2193,7 +2328,7 @@ class _LotteryTokenPanelState extends State<_LotteryTokenPanel> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1B2A),
+        color: AdminColors.card,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: hasToken
@@ -2209,7 +2344,7 @@ class _LotteryTokenPanelState extends State<_LotteryTokenPanel> {
               hasToken
                   ? Icons.confirmation_num_rounded
                   : Icons.confirmation_num_outlined,
-              color: hasToken ? Colors.greenAccent : Colors.white38,
+              color: hasToken ? Colors.greenAccent : AdminColors.textMuted,
               size: 16,
             ),
             const SizedBox(width: 8),
@@ -2219,7 +2354,7 @@ class _LotteryTokenPanelState extends State<_LotteryTokenPanel> {
                     ? 'Lottery button enabled for customers'
                     : 'Lottery disabled — enter token to show the draw button',
                 style: TextStyle(
-                  color: hasToken ? Colors.greenAccent : Colors.white38,
+                  color: hasToken ? Colors.greenAccent : AdminColors.textMuted,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -2240,23 +2375,23 @@ class _LotteryTokenPanelState extends State<_LotteryTokenPanel> {
                 decoration: InputDecoration(
                   hintText: 'Lottery draw token (per-lottery)',
                   hintStyle:
-                      const TextStyle(color: Colors.white24, fontSize: 13),
+                      const TextStyle(color: AdminColors.textMuted, fontSize: 13),
                   filled: true,
-                  fillColor: const Color(0xFF060E18),
+                  fillColor: AdminColors.fieldFill,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Colors.white12),
+                    borderSide: const BorderSide(color: AdminColors.border),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Colors.white12),
+                    borderSide: const BorderSide(color: AdminColors.border),
                   ),
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscure ? Icons.visibility_off : Icons.visibility,
-                      color: Colors.white38,
+                      color: AdminColors.textMuted,
                       size: 16,
                     ),
                     onPressed: () => setState(() => _obscure = !_obscure),
@@ -2299,7 +2434,7 @@ class _LotteryTokenPanelState extends State<_LotteryTokenPanel> {
           const Text(
             'Find it in vms-cloud → Lotteries → Token.\n'
             'Each lottery campaign has its own draw token.',
-            style: TextStyle(color: Colors.white24, fontSize: 11, height: 1.5),
+            style: TextStyle(color: AdminColors.textMuted, fontSize: 11, height: 1.5),
           ),
           if (_ctrl.text.trim().isNotEmpty) ...[
             const SizedBox(height: 6),
@@ -2375,7 +2510,7 @@ class _ManagementTokenPanelState extends State<_ManagementTokenPanel> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1B2A),
+        color: AdminColors.card,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: hasToken
@@ -2401,7 +2536,7 @@ class _ManagementTokenPanelState extends State<_ManagementTokenPanel> {
                     ? 'Admin Panel unlocked'
                     : 'Admin Panel locked — enter token to enable',
                 style: TextStyle(
-                  color: hasToken ? Colors.white70 : Colors.orange,
+                  color: hasToken ? AdminColors.textSecondary : Colors.orange,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -2422,23 +2557,23 @@ class _ManagementTokenPanelState extends State<_ManagementTokenPanel> {
                 decoration: InputDecoration(
                   hintText: 'Management API Bearer token',
                   hintStyle:
-                      const TextStyle(color: Colors.white24, fontSize: 13),
+                      const TextStyle(color: AdminColors.textMuted, fontSize: 13),
                   filled: true,
-                  fillColor: const Color(0xFF060E18),
+                  fillColor: AdminColors.fieldFill,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Colors.white12),
+                    borderSide: const BorderSide(color: AdminColors.border),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Colors.white12),
+                    borderSide: const BorderSide(color: AdminColors.border),
                   ),
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscure ? Icons.visibility_off : Icons.visibility,
-                      color: Colors.white38,
+                      color: AdminColors.textMuted,
                       size: 16,
                     ),
                     onPressed: () => setState(() => _obscure = !_obscure),
@@ -2481,7 +2616,7 @@ class _ManagementTokenPanelState extends State<_ManagementTokenPanel> {
           const Text(
             'Find it in vms-cloud → Settings → MANAGEMENT_TOKEN.\n'
             'This token has nothing to do with lottery.',
-            style: TextStyle(color: Colors.white24, fontSize: 11, height: 1.5),
+            style: TextStyle(color: AdminColors.textMuted, fontSize: 11, height: 1.5),
           ),
           if (_ctrl.text.trim().isNotEmpty) ...[
             const SizedBox(height: 6),
@@ -2596,7 +2731,7 @@ class _ReyeahCredentialsPanelState extends State<_ReyeahCredentialsPanel> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1A2B),
+        color: AdminColors.card,
         borderRadius: BorderRadius.circular(14),
         border:
             Border.all(color: const Color(0xFF00BCD4).withValues(alpha: 0.25)),
@@ -2726,7 +2861,7 @@ class _ReyeahCredentialsPanelState extends State<_ReyeahCredentialsPanel> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label,
-            style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            style: const TextStyle(color: AdminColors.textSecondary, fontSize: 12)),
         const SizedBox(height: 6),
         TextField(
           controller: ctrl,
@@ -2737,29 +2872,29 @@ class _ReyeahCredentialsPanelState extends State<_ReyeahCredentialsPanel> {
           style: const TextStyle(color: Colors.white, fontSize: 13),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(color: Colors.white24, fontSize: 12),
-            prefixIcon: Icon(icon, color: Colors.white38, size: 18),
+            hintStyle: const TextStyle(color: AdminColors.textMuted, fontSize: 12),
+            prefixIcon: Icon(icon, color: AdminColors.textMuted, size: 18),
             suffixIcon: onToggleObscure != null
                 ? IconButton(
                     icon: Icon(
                       obscure ? Icons.visibility_off : Icons.visibility,
-                      color: Colors.white38,
+                      color: AdminColors.textMuted,
                       size: 18,
                     ),
                     onPressed: onToggleObscure,
                   )
                 : null,
             filled: true,
-            fillColor: const Color(0xFF060E18),
+            fillColor: AdminColors.fieldFill,
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Colors.white12),
+              borderSide: const BorderSide(color: AdminColors.border),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Colors.white12),
+              borderSide: const BorderSide(color: AdminColors.border),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
@@ -2853,7 +2988,7 @@ class _AfenVmcPanelState extends State<_AfenVmcPanel> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1A2B),
+        color: AdminColors.card,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
             color: const Color(0xFFFF9800).withValues(alpha: 0.25)),
@@ -2865,7 +3000,7 @@ class _AfenVmcPanelState extends State<_AfenVmcPanel> {
             'Products, ads, stock and prices come from vms-cloud. '
             'AFEN is only used to authorize and report physical motor vends '
             '(FunCode 2000 / 5000 over UART).',
-            style: TextStyle(color: Colors.white38, fontSize: 11, height: 1.4),
+            style: TextStyle(color: AdminColors.textMuted, fontSize: 11, height: 1.4),
           ),
           const SizedBox(height: 14),
           _afenField('VMC Server URL', _vmcUrlCtrl,
@@ -2911,11 +3046,11 @@ class _AfenVmcPanelState extends State<_AfenVmcPanel> {
       style: const TextStyle(color: Colors.white, fontSize: 13),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(color: Colors.white54, fontSize: 12),
+        labelStyle: const TextStyle(color: AdminColors.textSecondary, fontSize: 12),
         hintText: hint,
-        hintStyle: const TextStyle(color: Colors.white24),
+        hintStyle: const TextStyle(color: AdminColors.textMuted),
         filled: true,
-        fillColor: const Color(0xFF060E18),
+        fillColor: AdminColors.fieldFill,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
       ),
       onTap: () => showKeypad(
@@ -2990,7 +3125,7 @@ class _TcnSettingsPanelState extends State<_TcnSettingsPanel> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1A2B),
+        color: AdminColors.card,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
             color: const Color(0xFF9575CD).withValues(alpha: 0.25)),
@@ -3000,7 +3135,7 @@ class _TcnSettingsPanelState extends State<_TcnSettingsPanel> {
         children: [
           const Text(
             'TCN coil motor via serial. Product catalog comes from vms-cloud.',
-            style: TextStyle(color: Colors.white38, fontSize: 11),
+            style: TextStyle(color: AdminColors.textMuted, fontSize: 11),
           ),
           const SizedBox(height: 14),
           TextField(
@@ -3009,7 +3144,7 @@ class _TcnSettingsPanelState extends State<_TcnSettingsPanel> {
             style: const TextStyle(color: Colors.white),
             decoration: const InputDecoration(
               labelText: 'Serial baud rate',
-              labelStyle: TextStyle(color: Colors.white54),
+              labelStyle: TextStyle(color: AdminColors.textSecondary),
             ),
             onTap: () => showKeypad(
               context,
@@ -3021,11 +3156,11 @@ class _TcnSettingsPanelState extends State<_TcnSettingsPanel> {
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(
             initialValue: _boardType,
-            dropdownColor: const Color(0xFF0D1A2B),
+            dropdownColor: AdminColors.card,
             style: const TextStyle(color: Colors.white),
             decoration: const InputDecoration(
               labelText: 'Control board type',
-              labelStyle: TextStyle(color: Colors.white54),
+              labelStyle: TextStyle(color: AdminColors.textSecondary),
             ),
             items: const [
               DropdownMenuItem(value: 'new', child: Text('New board')),
@@ -3036,12 +3171,12 @@ class _TcnSettingsPanelState extends State<_TcnSettingsPanel> {
           const SizedBox(height: 10),
           Text(
             'TTY: ${AppConfig.ttyPath} · Dispense: \$\$\$|D|slot|1|0|255|%%%',
-            style: const TextStyle(color: Colors.white38, fontSize: 11),
+            style: const TextStyle(color: AdminColors.textMuted, fontSize: 11),
           ),
           if (_queryResult != null) ...[
             const SizedBox(height: 10),
             Text(_queryResult!,
-                style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                style: const TextStyle(color: AdminColors.textSecondary, fontSize: 11)),
           ],
           const SizedBox(height: 14),
           Row(children: [
@@ -3109,7 +3244,7 @@ class _PinVerifyDialogState extends State<_PinVerifyDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xFF0D1A2B),
+      backgroundColor: AdminColors.card,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       title: const Row(
         children: [
@@ -3124,7 +3259,7 @@ class _PinVerifyDialogState extends State<_PinVerifyDialog> {
         children: [
           const Text(
             'Enter admin PIN to continue.',
-            style: TextStyle(color: Colors.white54, fontSize: 13),
+            style: TextStyle(color: AdminColors.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 20),
           TextField(
@@ -3139,14 +3274,14 @@ class _PinVerifyDialogState extends State<_PinVerifyDialog> {
             decoration: InputDecoration(
               counterText: '',
               hintText: '••••',
-              hintStyle: const TextStyle(color: Colors.white24),
+              hintStyle: const TextStyle(color: AdminColors.textMuted),
               errorText: _error,
               errorStyle: const TextStyle(color: Colors.redAccent),
               filled: true,
-              fillColor: const Color(0xFF060E18),
+              fillColor: AdminColors.fieldFill,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Colors.white12),
+                borderSide: const BorderSide(color: AdminColors.border),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -3166,7 +3301,7 @@ class _PinVerifyDialogState extends State<_PinVerifyDialog> {
         TextButton(
           onPressed: () => Navigator.pop(context, false),
           child: const Text('Cancel',
-              style: TextStyle(color: Colors.white38)),
+              style: TextStyle(color: AdminColors.textMuted)),
         ),
         ElevatedButton(
           onPressed: _submit,
@@ -3196,25 +3331,23 @@ Future<void> showAdminPinDialog(
   await showDialog(
     context: context,
     barrierDismissible: true,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setDialogState) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A2B),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Row(
-          children: [
-            Icon(Icons.lock_outline, color: Color(0xFF007ACC), size: 22),
-            SizedBox(width: 10),
-            Text('Admin Access',
-                style: TextStyle(color: Colors.white, fontSize: 18)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Enter your admin PIN to access settings.',
-              style: TextStyle(color: Colors.white54, fontSize: 13),
-            ),
+    builder: (ctx) => AdminTheme.withLightTheme(
+      child: StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.lock_outline, color: AdminColors.accent, size: 22),
+              SizedBox(width: 10),
+              Text('Admin access'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Enter your admin PIN to access settings.',
+                style: TextStyle(color: AdminColors.textSecondary, fontSize: 13),
+              ),
             const SizedBox(height: 20),
             TextField(
               controller: controller,
@@ -3226,18 +3359,20 @@ Future<void> showAdminPinDialog(
               textAlign: TextAlign.center,
               maxLength: 8,
               style: const TextStyle(
-                  color: Colors.white, fontSize: 22, letterSpacing: 8),
+                  color: AdminColors.textPrimary,
+                  fontSize: 22,
+                  letterSpacing: 8),
               decoration: InputDecoration(
                 counterText: '',
                 hintText: '••••',
-                hintStyle: const TextStyle(color: Colors.white24),
+                hintStyle: const TextStyle(color: AdminColors.textMuted),
                 errorText: error,
                 errorStyle: const TextStyle(color: Colors.redAccent),
                 filled: true,
-                fillColor: const Color(0xFF060E18),
+                fillColor: AdminColors.fieldFill,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Colors.white12),
+                  borderSide: const BorderSide(color: AdminColors.border),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -3271,28 +3406,22 @@ Future<void> showAdminPinDialog(
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child:
-                const Text('Cancel', style: TextStyle(color: Colors.white38)),
-          ),
-          ElevatedButton(
-            onPressed: () => _checkPin(
-              ctx,
-              controller.text,
-              (e) => setDialogState(() => error = e),
-              pushAfterPin: pushAfterPin,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
             ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF007ACC),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+            FilledButton(
+              onPressed: () => _checkPin(
+                ctx,
+                controller.text,
+                (e) => setDialogState(() => error = e),
+                pushAfterPin: pushAfterPin,
+              ),
+              child: const Text('Enter'),
             ),
-            child: const Text('Enter'),
-          ),
-        ],
+          ],
+        ),
       ),
     ),
   );
@@ -3311,7 +3440,10 @@ void _checkPin(
     } else {
       Navigator.push(
         ctx,
-        MaterialPageRoute(builder: (_) => const AdminConfigScreen()),
+        MaterialPageRoute(
+          builder: (_) =>
+            AdminTheme.withLightTheme(child: const AdminConfigScreen()),
+        ),
       );
     }
   } else {
@@ -3328,7 +3460,7 @@ class _CheckingUpdateDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xFF0D1A2B),
+      backgroundColor: AdminColors.card,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       content: const Row(
         mainAxisSize: MainAxisSize.min,
@@ -3343,7 +3475,7 @@ class _CheckingUpdateDialog extends StatelessWidget {
           ),
           SizedBox(width: 16),
           Text('Checking for updates…',
-              style: TextStyle(color: Colors.white70, fontSize: 14)),
+              style: TextStyle(color: AdminColors.textSecondary, fontSize: 14)),
         ],
       ),
     );
@@ -3358,7 +3490,7 @@ class _DownloadingDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xFF0D1A2B),
+      backgroundColor: AdminColors.card,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: const Row(children: [
         Icon(Icons.download_rounded, color: Color(0xFF388E3C)),
@@ -3379,7 +3511,7 @@ class _DownloadingDialog extends StatelessWidget {
                 child: LinearProgressIndicator(
                   value: value > 0 ? value : null,
                   minHeight: 10,
-                  backgroundColor: const Color(0xFF060E18),
+                  backgroundColor: AdminColors.fieldFill,
                   valueColor:
                       const AlwaysStoppedAnimation<Color>(Color(0xFF388E3C)),
                 ),
@@ -3389,12 +3521,12 @@ class _DownloadingDialog extends StatelessWidget {
                 value > 0
                     ? '${(value * 100).toStringAsFixed(0)}% complete'
                     : 'Starting download…',
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
+                style: const TextStyle(color: AdminColors.textSecondary, fontSize: 12),
               ),
               const SizedBox(height: 4),
               const Text(
                 'After download, Android will ask you to confirm the install.',
-                style: TextStyle(color: Colors.white38, fontSize: 11),
+                style: TextStyle(color: AdminColors.textMuted, fontSize: 11),
               ),
             ],
           ),
@@ -3516,7 +3648,7 @@ class _DispenseProgressDialogState extends State<_DispenseProgressDialog> {
         _stage == _DispenseStage.success || _stage == _DispenseStage.error;
 
     return AlertDialog(
-      backgroundColor: const Color(0xFF0D1A2B),
+      backgroundColor: AdminColors.card,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Row(
         children: [
@@ -3550,7 +3682,7 @@ class _DispenseProgressDialogState extends State<_DispenseProgressDialog> {
                         ? (_stage == _DispenseStage.success
                             ? Colors.greenAccent
                             : Colors.redAccent)
-                        : Colors.white70,
+                        : AdminColors.textSecondary,
                     fontSize: 13,
                   ),
                 )),

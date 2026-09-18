@@ -19,23 +19,29 @@ class OfflineSyncService {
 
   bool _online = true;
   StreamSubscription<List<ConnectivityResult>>? _sub;
+  Timer? _connectivityDebounce;
   bool _flushing = false;
+
+  DateTime? _lastReachabilityCheck;
+  bool _lastReachability = false;
+  static const Duration _reachabilityTtl = Duration(seconds: 45);
 
   bool get isOnline => _online;
 
-  Future<void> start() async {
-    if (kIsWeb) return;
-    await refreshConnectivity();
-    _sub ??= Connectivity().onConnectivityChanged.listen((_) {
-      refreshConnectivity();
-    });
-  }
-
-  Future<void> refreshConnectivity() async {
+  /// Cached cloud reachability (link + `/kiosk/version` ping). Avoids redundant
+  /// pings when slots, ads, and lottery poll in the same few seconds.
+  Future<bool> isCloudReachable({bool forceRefresh = false}) async {
     if (kIsWeb) {
       _online = true;
-      return;
+      return true;
     }
+
+    if (!forceRefresh &&
+        _lastReachabilityCheck != null &&
+        DateTime.now().difference(_lastReachabilityCheck!) < _reachabilityTtl) {
+      return _lastReachability;
+    }
+
     final results = await Connectivity().checkConnectivity();
     final hadLink = results.any(
       (r) =>
@@ -43,16 +49,43 @@ class OfflineSyncService {
           r == ConnectivityResult.ethernet ||
           r == ConnectivityResult.mobile,
     );
+
     if (!hadLink) {
-      _online = false;
-      return;
+      _recordReachability(false);
+      return false;
     }
-    _online = await _pingCloud();
-    if (_online) {
+
+    final reachable = await _pingCloud();
+    _recordReachability(reachable);
+
+    if (reachable) {
       unawaited(flushPendingMutations());
       unawaited(MachineIssueService.instance.flushOfflineQueue());
       unawaited(KioskCloudService.instance.heartbeat());
     }
+
+    return reachable;
+  }
+
+  void _recordReachability(bool reachable) {
+    _lastReachabilityCheck = DateTime.now();
+    _lastReachability = reachable;
+    _online = reachable;
+  }
+
+  Future<void> start() async {
+    if (kIsWeb) return;
+    await isCloudReachable(forceRefresh: true);
+    _sub ??= Connectivity().onConnectivityChanged.listen((_) {
+      _connectivityDebounce?.cancel();
+      _connectivityDebounce = Timer(const Duration(milliseconds: 400), () {
+        unawaited(isCloudReachable(forceRefresh: true));
+      });
+    });
+  }
+
+  Future<void> refreshConnectivity() async {
+    await isCloudReachable(forceRefresh: true);
   }
 
   Future<bool> _pingCloud() async {
@@ -67,7 +100,7 @@ class OfflineSyncService {
 
   Future<int> flushPendingMutations() async {
     if (_flushing || !AdminApiService.hasToken) return 0;
-    if (!await _pingCloud()) return 0;
+    if (!await isCloudReachable()) return 0;
 
     _flushing = true;
     var synced = 0;

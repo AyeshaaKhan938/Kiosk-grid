@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../models/advertisement.dart';
 import '../utils/ad_media.dart';
+import '../models/cart_item.dart';
 import '../models/machine_slot.dart';
 import '../models/product_category.dart';
 import '../services/advertisement_service.dart';
@@ -11,13 +12,15 @@ import '../services/slot_service.dart';
 import '../utils/kiosk_page_transitions.dart';
 import '../utils/tap_feedback.dart';
 import '../services/purchase_service.dart';
+import '../widgets/grid_product_card.dart';
 import '../widgets/kiosk_app_header.dart';
+import '../widgets/kiosk_shop_bottom_nav.dart';
 import '../widgets/product_detail_popup.dart';
 import '../widgets/sticky_cart_summary_bar.dart';
 import 'admin_config_screen.dart';
 import 'cart_screen.dart';
 import 'idle_screen.dart';
-import 'purchase_result_screen.dart';
+import 'payment_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constantes del carousel
@@ -124,15 +127,29 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
   // ── Data ─────────────────────────────────────────────────────────────────
 
   Future<void> _loadSlots() async {
-    setState(() { _loading = true; _error = null; });
+    final cached = SlotService.peekCustomerCatalog();
+    if (cached != null && mounted) {
+      setState(() {
+        _data = cached;
+        _loading = false;
+        _error = null;
+      });
+    } else {
+      setState(() { _loading = true; _error = null; });
+    }
     try {
       final data = await SlotService.fetchSlots();
       if (mounted) setState(() => _data = data);
     } catch (e) {
       if (mounted) {
-        setState(() => _error = e.toString().contains('machine_not_found')
+        final msg = e.toString();
+        setState(() => _error = msg.contains('machine_not_found')
             ? 'Machine not configured. Contact your operator.'
-            : 'Could not connect to server. Check your connection.');
+            : msg.contains('device_token_required')
+                ? 'Kiosk not activated for cloud. Admin PIN → Cloud activation, enter the code from vms-cloud, then refresh.'
+            : msg.contains('catalog_offline')
+                ? 'Could not load products. Check API URL in setup and refresh.'
+                : 'Could not connect to server. Check your connection.');
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -182,8 +199,13 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
     return ['All', ...list];
   }
 
+  List<MachineSlot> get _shopSlots =>
+      (_data?.slots ?? const <MachineSlot>[])
+          .where((s) => s.isListedInShop)
+          .toList();
+
   List<MachineSlot> get _filteredSlots {
-    var list = [...(_data?.slots ?? const <MachineSlot>[])];
+    var list = [..._shopSlots];
     if (_selectedCategory != 'All') {
       list = list
           .where((s) => s.productCategory?.trim() == _selectedCategory)
@@ -472,7 +494,7 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
   }
 
   void _onProductTapped(MachineSlot slot) {
-    if (!slot.isAvailable) return;
+    if (!slot.isListedInShop) return;
     TapFeedback.play();
     showProductDetailPopup(
       context,
@@ -482,7 +504,7 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
   }
 
   void _onAddToCart(MachineSlot slot) {
-    if (!slot.isAvailable || slot.isOutOfStock) return;
+    if (!slot.isPurchasable) return;
     TapFeedback.play();
     CartService.instance.add(slot);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -504,32 +526,33 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
     final cart = CartService.instance;
     if (cart.isEmpty) return;
 
-    try {
-      final results = await PurchaseService.checkoutCart(
-        cart.items,
-        ageVerificationSessionId: widget.ageVerificationSessionId,
-      );
-      if (!mounted) return;
-      cart.clear();
-      Navigator.of(context).pushReplacement(
-        kioskSlideRoute(
-          builder: (_) => PurchaseResultScreen(purchases: results),
+    final items = List<CartItem>.from(cart.items);
+    final total = items.fold<double>(
+      0,
+      (sum, item) => sum + (item.slot.price * item.quantity),
+    );
+    final summary = items.length == 1
+        ? items.first.slot.productName
+        : '${items.length} items';
+
+    if (!mounted) return;
+    Navigator.of(context).push(
+      kioskSlideRoute(
+        builder: (_) => PaymentScreen(
+          amount: total,
+          summary: summary,
+          completePurchase: (receipt) async {
+            final results = await PurchaseService.checkoutCart(
+              items,
+              ageVerificationSessionId: widget.ageVerificationSessionId,
+              payment: receipt,
+            );
+            cart.clear();
+            return results;
+          },
         ),
-      );
-    } on PurchaseException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message), behavior: SnackBarBehavior.floating),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Checkout failed. Check your connection.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
+      ),
+    );
   }
 
   void _goBackToIdle() {
@@ -621,12 +644,28 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
           _buildShopToolbar(cs: cs, bg: bg, primary: primary, pad: pad),
           _buildCategoryBar(cs: cs, primary: primary, pad: pad),
           Expanded(child: _buildProductGrid(cs: cs, primary: primary)),
-          StickyCartSummaryBar(
-            onViewCart: _openCart,
-            onCheckout: _checkoutFromStickyBar,
-          ),
-          _buildBackBar(cs: cs, bg: bg, pad: pad),
         ],
+      ),
+      bottomNavigationBar: Material(
+        elevation: 12,
+        color: bg,
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              StickyCartSummaryBar(
+                onViewCart: _openCart,
+                onCheckout: _checkoutFromStickyBar,
+              ),
+              KioskShopBottomNav(
+                onBackToAds: _goBackToIdle,
+                onOpenCart: _openCart,
+                onRefresh: _loadSlots,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -640,12 +679,12 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
   }) {
     return KioskAppHeader(
       title: _data?.machineName ?? 'VMFS USA',
-      subtitle: (_data?.slots.length ?? 0) > 0
-          ? '${_data!.slots.length} products · Tap to shop'
+      subtitle: _shopSlots.isNotEmpty
+          ? '${_shopSlots.length} products · Tap card for details'
           : 'Browse & buy',
       onLogoTap: _onSecretTap,
       onRefresh: _loadSlots,
-      onCart: _openCart,
+      showAccessibility: true,
     );
   }
 
@@ -771,7 +810,7 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
     if (_error != null) return _buildError(_error!, cs: cs, primary: primary);
     final slots = _filteredSlots;
     if (slots.isEmpty) {
-      if ((_data?.slots ?? []).isNotEmpty) {
+      if (_shopSlots.isNotEmpty) {
         return Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -794,6 +833,41 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
           ),
         );
       }
+      final rawCount = _data?.slots.length ?? 0;
+      if (rawCount > 0 && _shopSlots.isEmpty) {
+        return Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: _sidePad(context)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.inventory_2_outlined,
+                    color: primary.withValues(alpha: 0.45), size: 48),
+                const SizedBox(height: 12),
+                Text(
+                  'No products assigned yet',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: cs.onSurface,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Assign products to slots in admin, or fix the API connection and tap refresh.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: cs.onSurface.withValues(alpha: 0.6),
+                    fontSize: 13,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
       return _buildEmpty(cs: cs);
     }
 
@@ -808,12 +882,12 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
         padding: EdgeInsets.fromLTRB(pad, 8, pad, 16),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: crossAxisCount,
-          childAspectRatio: 0.68,
+          childAspectRatio: 0.72,
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
         ),
         itemCount: slots.length,
-        itemBuilder: (ctx, i) => _GridProductCard(
+        itemBuilder: (ctx, i) => GridProductCard(
           slot: slots[i],
           onTap: () => _onProductTapped(slots[i]),
           onAdd: () => _onAddToCart(slots[i]),
@@ -854,55 +928,6 @@ class _ProductBrowserScreenState extends State<ProductBrowserScreen> {
             ),
           ),
         )),
-      ),
-    );
-  }
-
-  // ── Back bar ──────────────────────────────────────────────────────────────
-
-  Widget _buildBackBar({
-    required ColorScheme cs,
-    required Color bg,
-    required double pad,
-  }) {
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: EdgeInsets.fromLTRB(pad, 8, pad + 56, 8),
-        decoration: BoxDecoration(
-          color: bg,
-          border: Border(top: BorderSide(color: cs.onSurface.withValues(alpha: 0.12))),
-        ),
-        child: Row(
-          children: [
-            Semantics(
-              label: 'Go back to advertisements screen',
-              button: true,
-              child: GestureDetector(
-                onTap: _goBackToIdle,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: cs.onSurface.withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: cs.onSurface.withValues(alpha: 0.12)),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.arrow_back_ios_new_rounded,
-                        color: cs.onSurface.withValues(alpha: 0.65), size: 12),
-                    const SizedBox(width: 5),
-                    Text('Back to ads',
-                        style: TextStyle(
-                            color: cs.onSurface.withValues(alpha: 0.65), fontSize: 11)),
-                  ]),
-                ),
-              ),
-            ),
-            const Spacer(),
-            Text('VMFS USA © 2026',
-                style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65), fontSize: 10)),
-          ],
-        ),
       ),
     );
   }
@@ -1468,231 +1493,6 @@ class _ProductCard extends StatelessWidget {
       ),
     );
   }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Grid product card — image, name, price, + Add
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _GridProductCard extends StatelessWidget {
-  final MachineSlot slot;
-  final VoidCallback onTap;
-  final VoidCallback onAdd;
-
-  const _GridProductCard({
-    required this.slot,
-    required this.onTap,
-    required this.onAdd,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final primary = cs.primary;
-    final soldOut = slot.isOutOfStock || !slot.isAvailable;
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: soldOut
-            ? null
-            : [
-                BoxShadow(
-                  color: primary.withValues(alpha: 0.12),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.06),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-      ),
-      child: Material(
-        color: cs.surface,
-        elevation: 0,
-        borderRadius: BorderRadius.circular(20),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: soldOut ? null : onTap,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                flex: 11,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (slot.productImage != null &&
-                        slot.productImage!.isNotEmpty)
-                      CachedNetworkImage(
-                        imageUrl: slot.productImage!,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) =>
-                            Container(color: cs.surfaceContainerHighest),
-                        errorWidget: (_, __, ___) => _imageFallback(cs, primary),
-                      )
-                    else
-                      _imageFallback(cs, primary),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      height: 56,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              Colors.black.withValues(alpha: 0.45),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (slot.productCategory != null &&
-                        slot.productCategory!.trim().isNotEmpty)
-                      Positioned(
-                        top: 10,
-                        left: 10,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: primary.withValues(alpha: 0.92),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            slot.productCategory!,
-                            style: TextStyle(
-                              color: cs.onPrimary,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                    if (!soldOut)
-                      Positioned(
-                        right: 10,
-                        bottom: 10,
-                        child: Material(
-                          color: cs.surface,
-                          elevation: 3,
-                          shape: const CircleBorder(),
-                          child: InkWell(
-                            customBorder: const CircleBorder(),
-                            onTap: () {
-                              TapFeedback.play();
-                              onAdd();
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.all(10),
-                              child: Icon(Icons.add_rounded,
-                                  color: primary, size: 22),
-                            ),
-                          ),
-                        ),
-                      ),
-                    if (soldOut)
-                      Container(
-                        color: Colors.black.withValues(alpha: 0.55),
-                        alignment: Alignment.center,
-                        child: const Text(
-                          'Sold out',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              Expanded(
-                flex: 9,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (slot.productBrand != null &&
-                          slot.productBrand!.isNotEmpty)
-                        Text(
-                          slot.productBrand!.toUpperCase(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: primary.withValues(alpha: 0.75),
-                            fontSize: 9,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.6,
-                          ),
-                        ),
-                      const SizedBox(height: 4),
-                      Text(
-                        slot.productName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: cs.onSurface,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          height: 1.15,
-                        ),
-                      ),
-                      const Spacer(),
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: primary.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              slot.priceFormatted,
-                              style: TextStyle(
-                                color: primary,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          const Spacer(),
-                          Text(
-                            '${slot.currentStock} left',
-                            style: TextStyle(
-                              color: slot.currentStock <= 2
-                                  ? Colors.orange.shade800
-                                  : cs.onSurface.withValues(alpha: 0.45),
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _imageFallback(ColorScheme cs, Color primary) => Container(
-        color: cs.surfaceContainerHighest,
-        child: Icon(Icons.inventory_2_outlined,
-            color: primary.withValues(alpha: 0.28), size: 44),
-      );
 }
 
 class _ToolChip extends StatelessWidget {
