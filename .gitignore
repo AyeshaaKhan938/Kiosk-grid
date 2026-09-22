@@ -46,8 +46,6 @@ app.*.map.json
 
 # Per-environment secrets — values are baked into the APK at build time
 # via flutter_dotenv. Use .env.example as the template for new clones.
-.env
-.env.local
 .env.*.local
 
 # Local Claude Code permission state — not shared across machines.
@@ -61,3 +59,5 @@ app.*.map.json
 **/key.properties
 *.jks
 *.keystore
+config.bat
+node_modules

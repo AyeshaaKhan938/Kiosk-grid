@@ -54,7 +54,17 @@ final class KioskCloudService {
   }
 
   /// POST /api/v1/kiosk/activate — stores device token on success.
-  Future<String?> activate({required String activationCode}) async {
+  Future<String?> activate({required String activationCode}) =>
+      _activate({'activation_code': activationCode.trim()});
+
+  /// POST /api/v1/kiosk/activate using just the machine number — no
+  /// activation code needed. Called automatically whenever the Machine
+  /// Number is saved (setup wizard, Admin Settings), so setup is just
+  /// "Machine Number + PIN".
+  Future<String?> activateByMachineNumber({required String machineNumber}) =>
+      _activate({'machine_number': machineNumber.trim()});
+
+  Future<String?> _activate(Map<String, String> identifier) async {
     final hardwareId = await AppConfig.ensureHardwareId();
     final url = Uri.parse('${AppConfig.apiBaseUrl}/kiosk/activate');
 
@@ -67,7 +77,7 @@ final class KioskCloudService {
               'Content-Type': 'application/json',
             },
             body: jsonEncode({
-              'activation_code': activationCode.trim(),
+              ...identifier,
               'hardware_id': hardwareId,
             }),
           )

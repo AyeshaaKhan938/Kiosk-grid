@@ -2,9 +2,10 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/app_config.dart';
+import '../services/kiosk_cloud_service.dart';
 import '../services/kiosk_lockdown.dart';
 import '../services/local_kiosk_store.dart';
-import '../widgets/cloud_activation_panel.dart';
+import '../services/log_file_util.dart';
 import '../widgets/onscreen_keypad.dart';
 import 'demo_mode/demo_mode_screen.dart';
 import 'kiosk_home_screen.dart';
@@ -137,6 +138,18 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
         adminPin:        _adminPin,
         language:        'en',
       );
+
+      // Setup is just Machine Number + PIN — no separate activation code
+      // step. Bind this device's token from the machine number alone right
+      // after saving. Best-effort: if the kiosk is offline during setup, it
+      // proceeds anyway (works locally, heartbeat/ads retry later).
+      if (_machineNo.trim().isNotEmpty) {
+        final error = await KioskCloudService.instance
+            .activateByMachineNumber(machineNumber: _machineNo);
+        if (error != null) {
+          LogFileUtil.w('cloud.activate.auto_failed', {'error': error});
+        }
+      }
     }
 
     await LocalKioskStore.instance.seedEmptyIfNeeded();
@@ -637,25 +650,6 @@ class _StepBackendState extends State<_StepBackend> {
           _StatusChip(ok: _urlStatus == '', message: _urlStatus == ''
               ? 'Server reachable ✓'
               : _urlStatus!),
-        ],
-        if (_urlStatus == '') ...[
-          const SizedBox(height: 24),
-          const Text(
-            'Activate kiosk with cloud (optional)',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'After the API test succeeds, enter the one-time code from '
-            'vms-cloud so this tablet can report faults and send heartbeat.',
-            style: TextStyle(color: Colors.white38, fontSize: 12, height: 1.4),
-          ),
-          const SizedBox(height: 12),
-          CloudActivationPanel(onSaved: () => setState(() {})),
         ],
         const SizedBox(height: 16),
         Center(
